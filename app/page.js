@@ -8,6 +8,11 @@ import Image from 'next/image';
 const HDD_ROOT = '/mnt/hdd';
 const SKIP = new Set(['lost+found']);
 
+// In-memory cache — survives between requests, invalidates after 5 min
+let _cache = null;
+let _cacheAt = 0;
+const CACHE_TTL = 5 * 60 * 1000;
+
 const TAB_TYPES = {
   all: null,
   series: 'series',
@@ -23,7 +28,7 @@ const TYPE_ICON = {
   'anime': '🎌',
 };
 
-function getShows() {
+function loadShows() {
   try {
     return fs.readdirSync(HDD_ROOT, { withFileTypes: true })
       .filter(d => d.isDirectory() && !d.name.startsWith('.') && !SKIP.has(d.name))
@@ -34,20 +39,31 @@ function getShows() {
 
         let type = 'unknown';
         let heroImage = null;
+        let suggestionPoint = 0;
         try {
           const meta = fs.readFileSync(path.join(showPath, 'metadata.txt'), 'utf8');
           const typeMatch = meta.match(/^type=(.+)/m);
           const heroMatch = meta.match(/^heroImage=(.+)/m);
+          const spMatch = meta.match(/^suggestionPoint=(.+)/m);
           if (typeMatch) type = typeMatch[1].trim();
           if (heroMatch) heroImage = heroMatch[1].trim();
+          if (spMatch) suggestionPoint = parseInt(spMatch[1].trim(), 10) || 0;
         } catch {}
 
-        return { name: d.name, count: episodes.length, type, heroImage };
+        return { name: d.name, count: episodes.length, type, heroImage, suggestionPoint };
       })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => b.suggestionPoint - a.suggestionPoint || a.name.localeCompare(b.name));
   } catch {
     return [];
   }
+}
+
+function getShows() {
+  const now = Date.now();
+  if (_cache && now - _cacheAt < CACHE_TTL) return _cache;
+  _cache = loadShows();
+  _cacheAt = now;
+  return _cache;
 }
 
 export default async function ShowsPage({ searchParams }) {

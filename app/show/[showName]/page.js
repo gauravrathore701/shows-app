@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import EpisodesList from '../../components/EpisodesList';
 
 const HDD_ROOT = '/mnt/hdd';
 const VIDEO_EXT = /\.(mp4|mkv|avi|mov|webm)$/i;
@@ -48,21 +49,7 @@ export default async function ShowPage({ params }) {
             <div className="empty-text">No episodes found in this show.</div>
           </div>
         ) : (
-          <div className="episodes-list">
-            {episodes.map((ep, i) => (
-              <Link
-                key={ep.name}
-                href={`/watch/${encodeURIComponent(decoded)}/${encodeURIComponent(ep.name)}`}
-              >
-                <div className="episode-card">
-                  <span className="ep-num">{String(i + 1).padStart(2, '0')}</span>
-                  <div className="ep-play">▶</div>
-                  <span className="ep-name">{ep.name.replace(VIDEO_EXT, '')}</span>
-                  <span className="ep-size">{formatSize(ep.size)}</span>
-                </div>
-              </Link>
-            ))}
-          </div>
+          <EpisodesList episodes={episodes} showName={decoded} />
         )}
       </div>
     </>

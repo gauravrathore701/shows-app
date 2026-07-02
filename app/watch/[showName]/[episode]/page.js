@@ -14,6 +14,14 @@ export default function WatchPage({ params }) {
   const mimeType = /\.mkv$/i.test(decodedEp) ? 'video/x-matroska' : /\.webm$/i.test(decodedEp) ? 'video/webm' : 'video/mp4';
 
   useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('lastWatched') || '{}');
+      stored[decodedShow] = decodedEp;
+      localStorage.setItem('lastWatched', JSON.stringify(stored));
+    } catch {}
+  }, [decodedShow, decodedEp]);
+
+  useEffect(() => {
     if (videoRef.current) {
       videoRef.current.load();
       videoRef.current.play().catch(() => {});
@@ -27,7 +35,7 @@ export default function WatchPage({ params }) {
         <span className="nav-sep">›</span>
         <Link href={`/show/${showName}`} className="nav-title">{decodedShow}</Link>
         <span className="nav-sep">›</span>
-        <span className="nav-title" style={{ color: '#b48cff' }}>{epTitle}</span>
+        <span className="nav-title">{epTitle}</span>
       </nav>
       <div className="video-wrap">
         <video
