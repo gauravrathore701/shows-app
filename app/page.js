@@ -34,8 +34,19 @@ function loadShows() {
       .filter(d => d.isDirectory() && !d.name.startsWith('.') && !SKIP.has(d.name))
       .map(d => {
         const showPath = path.join(HDD_ROOT, d.name);
-        const episodes = fs.readdirSync(showPath)
-          .filter(f => /\.(mp4|mkv|avi|mov|webm)$/i.test(f));
+        const VIDEO_EXT_LOCAL = /\.(mp4|mkv|avi|mov|webm)$/i;
+        const allEntries = fs.readdirSync(showPath, { withFileTypes: true });
+        const directVideos = allEntries.filter(e => e.isFile() && VIDEO_EXT_LOCAL.test(e.name));
+        let episodeCount = directVideos.length;
+        if (episodeCount === 0) {
+          const subDirs = allEntries.filter(e => e.isDirectory() && !e.name.startsWith('.'));
+          for (const sub of subDirs) {
+            try {
+              const subFiles = fs.readdirSync(path.join(showPath, sub.name)).filter(f => VIDEO_EXT_LOCAL.test(f));
+              episodeCount += subFiles.length;
+            } catch {}
+          }
+        }
 
         let type = 'unknown';
         let heroImage = null;
@@ -50,7 +61,7 @@ function loadShows() {
           if (spMatch) suggestionPoint = parseInt(spMatch[1].trim(), 10) || 0;
         } catch {}
 
-        return { name: d.name, count: episodes.length, type, heroImage, suggestionPoint };
+        return { name: d.name, count: episodeCount, type, heroImage, suggestionPoint };
       })
       .sort((a, b) => b.suggestionPoint - a.suggestionPoint || a.name.localeCompare(b.name));
   } catch {

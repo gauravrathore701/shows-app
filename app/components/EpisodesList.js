@@ -11,8 +11,11 @@ function formatSize(bytes) {
   return (bytes / 1e3).toFixed(0) + ' KB';
 }
 
-export default function EpisodesList({ episodes, showName }) {
+export default function EpisodesList({ episodes, showName, watchBase }) {
   const [lastWatched, setLastWatched] = useState(null);
+
+  // For flat shows watchBase is not passed — default to /watch/<showName>
+  const base = watchBase ?? `/watch/${encodeURIComponent(showName)}`;
 
   useEffect(() => {
     try {
@@ -28,7 +31,7 @@ export default function EpisodesList({ episodes, showName }) {
         return (
           <Link
             key={ep.name}
-            href={`/watch/${encodeURIComponent(showName)}/${encodeURIComponent(ep.name)}`}
+            href={`${base}/${encodeURIComponent(ep.name)}`}
           >
             <div className={`episode-card${isLast ? ' ep-last-watched' : ''}`}>
               <span className="ep-num">{String(i + 1).padStart(2, '0')}</span>

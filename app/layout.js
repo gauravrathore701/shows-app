@@ -11,6 +11,12 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <AuthGate>{children}</AuthGate>
+        <div className="dev-credit">
+          developed and managed by{' '}
+          <a href="https://gaurav.cursedshrine.com" target="_blank" rel="noopener noreferrer">
+            Gaurav Rathore
+          </a>
+        </div>
       </body>
     </html>
   );

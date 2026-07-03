@@ -209,6 +209,23 @@ a { color: inherit; text-decoration: none; }
 .modal-btn:hover { opacity: .85; }
 .modal-btn:disabled { opacity: .4; cursor: not-allowed; }
 
+/* ── DEV CREDIT ── */
+.dev-credit {
+  position: fixed;
+  bottom: 1rem;
+  right: 1.5rem;
+  font-size: .7rem;
+  color: #444;
+  z-index: 50;
+  pointer-events: none;
+}
+.dev-credit a {
+  color: #666;
+  pointer-events: all;
+  transition: color .2s;
+}
+.dev-credit a:hover { color: #aaa; }
+
 /* ── LOGOUT BUTTON ── */
 .logout-btn {
   position: fixed; bottom: 1.5rem; right: 1.5rem;
