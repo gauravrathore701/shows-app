@@ -45,6 +45,107 @@ function getDuration(filePath) {
   } catch { return 0; }
 }
 
+// ── HLS (segment-on-demand) ────────────────────────────────────────────────
+// The player requests /<file>/index.m3u8 (a VOD playlist listing every segment
+// computed from the file's duration), then /<file>/segN.ts on demand. Each
+// segment is transcoded independently by seeking FFmpeg to that timestamp, so
+// the user gets true random seeking and each segment can retry on a disk blip.
+const SEG = 6; // seconds per segment
+
+function buildPlaylist(duration) {
+  const count = Math.ceil(duration / SEG);
+  const lines = [
+    '#EXTM3U',
+    '#EXT-X-VERSION:3',
+    `#EXT-X-TARGETDURATION:${SEG}`,
+    '#EXT-X-MEDIA-SEQUENCE:0',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+  ];
+  for (let i = 0; i < count; i++) {
+    const segDur = i === count - 1 ? duration - i * SEG : SEG;
+    lines.push(`#EXTINF:${segDur.toFixed(3)},`);
+    lines.push(`seg${i}.ts`);
+  }
+  lines.push('#EXT-X-ENDLIST');
+  return lines.join('\n') + '\n';
+}
+
+function serveHlsPlaylist(filePath, res) {
+  const duration = getDuration(filePath);
+  if (!duration) { res.writeHead(500); res.end('Could not probe duration'); return; }
+  const body = buildPlaylist(duration);
+  res.writeHead(200, {
+    ...CORS,
+    'Content-Type': 'application/vnd.apple.mpegurl',
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
+}
+
+// Transcode one segment to MPEG-TS. Buffer it fully before responding so a
+// mid-transcode failure (e.g. HDD dropout) never yields a truncated/cached
+// segment — we can cleanly retry, and only complete segments get cached.
+function serveHlsSegment(filePath, index, res) {
+  const start = index * SEG;
+  const ffArgs = [
+    '-hide_banner', '-loglevel', 'error',
+    '-ss', start.toFixed(3),
+    '-i', filePath,
+    '-t', SEG.toFixed(3),
+    '-map', '0:v:0', '-map', '0:a:0',   // first video + first audio only (skip commentary track & PGS subs)
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+    '-pix_fmt', 'yuv420p',
+    '-vf', 'scale=-2:720',
+    '-force_key_frames', 'expr:gte(t,0)', // keyframe at segment start → independently decodable
+    '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
+    '-output_ts_offset', start.toFixed(3), // align PTS to playlist position → contiguous timeline
+    '-muxdelay', '0', '-muxpreload', '0',
+    '-f', 'mpegts', 'pipe:1',
+  ];
+
+  const RETRY_DELAY_MS = 5000;
+
+  function attempt(retriesLeft) {
+    const ff = spawn('ffmpeg', ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const chunks = [];
+    let errBuf = '';
+
+    ff.stdout.on('data', (c) => chunks.push(c));
+    ff.stderr.on('data', (d) => { errBuf += d.toString(); });
+
+    ff.on('error', (err) => {
+      console.error('[hls] spawn error:', err);
+      if (!res.headersSent) { res.writeHead(500); res.end('Transcode error'); }
+    });
+
+    ff.on('close', (code) => {
+      if (res.destroyed) return;
+      if (code === 0 && chunks.length) {
+        const body = Buffer.concat(chunks);
+        res.writeHead(200, {
+          ...CORS,
+          'Content-Type': 'video/mp2t',
+          'Content-Length': body.length,
+          'Cache-Control': 'public, max-age=86400', // segments are self-contained → safe to cache
+        });
+        res.end(body);
+        return;
+      }
+      if (retriesLeft > 0) {
+        console.error(`[hls] seg${index} failed (code ${code}) — retrying in ${RETRY_DELAY_MS / 1000}s: ${errBuf.trim().slice(0, 120)}`);
+        setTimeout(() => { if (!res.destroyed) attempt(retriesLeft - 1); }, RETRY_DELAY_MS);
+        return;
+      }
+      console.error(`[hls] seg${index} failed permanently (code ${code}): ${errBuf.trim().slice(0, 200)}`);
+      if (!res.headersSent) { res.writeHead(500); res.end('Segment transcode failed'); }
+    });
+
+    res.on('close', () => ff.kill('SIGKILL'));
+  }
+
+  attempt(1);
+}
+
 // Transcode HEVC → H.264 fMP4 using libx264 ultrafast.
 // We wait for the first data chunk BEFORE writing response headers so the
 // fallback can still work if FFmpeg fails to produce any output.
@@ -74,48 +175,65 @@ function serveTranscoded(filePath, fileSize, res, rangeHeader) {
     'pipe:1',
   ];
 
-  const ff = spawn('ffmpeg', ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+  // The USB HDD occasionally drops off the bus and re-enumerates within ~5s
+  // (ext4 remounts automatically). If FFmpeg fails to produce any output,
+  // retry once after the recovery window instead of 500ing immediately.
+  const RETRY_DELAY_MS = 5000;
 
-  let headersSent = false;
+  function attempt(retriesLeft) {
+    const ff = spawn('ffmpeg', ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
-  ff.stdout.once('data', (firstChunk) => {
-    if (!headersSent) {
-      headersSent = true;
-      res.writeHead(200, {
-        ...CORS,
-        'Content-Type': 'video/mp4',
-        'Cache-Control': 'no-store',
-        'Accept-Ranges': 'none',
-      });
-      // The 'data' listener consumes this chunk — it contains the MP4
-      // ftyp/moov header, so it MUST be written before piping the rest
-      res.write(firstChunk);
-      ff.stdout.pipe(res);
-    }
-  });
+    let headersSent = false;
 
-  ff.stderr.on('data', (d) => {
-    // Only log if headers not sent yet (startup errors)
-    if (!headersSent) console.error('[ffmpeg hevc]', d.toString().trim());
-  });
+    ff.stdout.once('data', (firstChunk) => {
+      if (!headersSent) {
+        headersSent = true;
+        res.writeHead(200, {
+          ...CORS,
+          'Content-Type': 'video/mp4',
+          'Cache-Control': 'no-store',
+          'Accept-Ranges': 'none',
+        });
+        // The 'data' listener consumes this chunk — it contains the MP4
+        // ftyp/moov header, so it MUST be written before piping the rest
+        res.write(firstChunk);
+        ff.stdout.pipe(res);
+      }
+    });
 
-  ff.on('close', (code) => {
-    if (!headersSent) {
-      // FFmpeg failed before producing any output
+    ff.stderr.on('data', (d) => {
+      // Only log if headers not sent yet (startup errors)
+      if (!headersSent) console.error('[ffmpeg hevc]', d.toString().trim());
+    });
+
+    ff.on('close', (code) => {
+      if (headersSent) {
+        console.log(`[ffmpeg] done ${path.basename(filePath)} code=${code}`);
+        return;
+      }
+      if (retriesLeft > 0 && !res.destroyed) {
+        console.error('[video-server] FFmpeg exited with code', code, `— retrying in ${RETRY_DELAY_MS / 1000}s (drive may be re-enumerating)`);
+        setTimeout(() => {
+          if (!res.destroyed) attempt(retriesLeft - 1);
+        }, RETRY_DELAY_MS);
+        return;
+      }
       console.error('[video-server] FFmpeg exited with code', code, '— sending 500');
       if (!res.headersSent) {
         res.writeHead(500);
         res.end('Transcode failed');
       }
-    }
-  });
+    });
 
-  ff.on('error', (err) => {
-    console.error('[video-server] FFmpeg spawn error:', err);
-    if (!res.headersSent) { res.writeHead(500); res.end('Transcode error'); }
-  });
+    ff.on('error', (err) => {
+      console.error('[video-server] FFmpeg spawn error:', err);
+      if (!res.headersSent) { res.writeHead(500); res.end('Transcode error'); }
+    });
 
-  res.on('close', () => ff.kill('SIGKILL'));
+    res.on('close', () => ff.kill('SIGKILL'));
+  }
+
+  attempt(1);
 }
 
 const CHUNK = 5 * 1024 * 1024;
@@ -131,7 +249,26 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  const urlPath = decodeURIComponent(req.url.replace(/^\//, ''));
+  const urlPath = decodeURIComponent(req.url.replace(/^\//, '').split('?')[0]);
+
+  // HLS routing: /<file>/index.m3u8  and  /<file>/segN.ts
+  // The "<file>" prefix is the real media path on disk.
+  const playlistMatch = urlPath.match(/^(.+)\/index\.m3u8$/);
+  const segmentMatch = urlPath.match(/^(.+)\/seg(\d+)\.ts$/);
+  if (playlistMatch || segmentMatch) {
+    const relFile = (playlistMatch || segmentMatch)[1];
+    const mediaPath = path.join(HDD_ROOT, relFile);
+    if (!mediaPath.startsWith(HDD_ROOT + '/')) { res.writeHead(403); res.end('Forbidden'); return; }
+    if (!fs.existsSync(mediaPath)) { res.writeHead(404); res.end('Not Found'); return; }
+    if (playlistMatch) {
+      console.log(`[hls] playlist ${path.basename(mediaPath)}`);
+      serveHlsPlaylist(mediaPath, res);
+    } else {
+      serveHlsSegment(mediaPath, parseInt(segmentMatch[2], 10), res);
+    }
+    return;
+  }
+
   const filePath = path.join(HDD_ROOT, urlPath);
 
   if (!filePath.startsWith(HDD_ROOT + '/')) {
@@ -145,7 +282,12 @@ const server = http.createServer((req, res) => {
   const fileSize = stat.size;
   const rangeHeader = req.headers['range'];
 
-  // HEVC → transcode on the fly
+  console.log(
+    `[req] ${new Date().toISOString()} ${path.basename(filePath)} ` +
+    `range=${rangeHeader || '-'} ua="${(req.headers['user-agent'] || '-').slice(0, 70)}"`
+  );
+
+  // HEVC → transcode on the fly (legacy progressive path; watch page uses HLS)
   if (isHEVC(filePath)) {
     serveTranscoded(filePath, fileSize, res, rangeHeader);
     return;

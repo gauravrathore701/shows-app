@@ -1,7 +1,12 @@
 'use client';
 
-import { use, useEffect, useRef } from 'react';
+import { use, useEffect } from 'react';
 import Link from 'next/link';
+
+import '@vidstack/react/player/styles/default/theme.css';
+import '@vidstack/react/player/styles/default/layouts/video.css';
+import { MediaPlayer, MediaProvider } from '@vidstack/react';
+import { defaultLayoutIcons, DefaultVideoLayout } from '@vidstack/react/player/layouts/default';
 
 export default function WatchPage({ params }) {
   const { showName, path } = use(params);
@@ -12,13 +17,17 @@ export default function WatchPage({ params }) {
   const decodedSeason = isSeasonal ? decodedPath[0] : null;
   const decodedEp = isSeasonal ? decodedPath[1] : decodedPath[0];
 
-  const streamUrl = `/api/stream/${encodeURIComponent(decodedShow)}/${decodedPath.map(encodeURIComponent).join('/')}`;
   const epTitle = decodedEp.replace(/\.(mp4|mkv|avi|mov|webm)$/i, '');
-  // HEVC/x265 files are transcoded server-side to H.264 MP4 — tell the browser to expect MP4
-  const isHevc = /x265|hevc|h\.?265/i.test(decodedEp);
-  const mimeType = isHevc ? 'video/mp4' : /\.mkv$/i.test(decodedEp) ? 'video/x-matroska' : /\.webm$/i.test(decodedEp) ? 'video/webm' : 'video/mp4';
 
-  const videoRef = useRef(null);
+  // HEVC/x265 files are transcoded server-side and served as HLS (segment-on-demand)
+  // → real seeking + resilience. Everything else is a browser-native container, served
+  // directly with byte-range seeking.
+  const isHevc = /x265|hevc|h\.?265/i.test(decodedEp);
+  const fileUrl = `/api/stream/${encodeURIComponent(decodedShow)}/${decodedPath.map(encodeURIComponent).join('/')}`;
+  const src = isHevc
+    ? { src: `${fileUrl}/index.m3u8`, type: 'application/x-mpegurl' }
+    : fileUrl;
+
   const watchKey = isSeasonal ? `${decodedShow}/${decodedSeason}` : decodedShow;
   const seasonHref = isSeasonal ? `/show/${showName}/${encodeURIComponent(decodedSeason)}` : null;
 
@@ -29,13 +38,6 @@ export default function WatchPage({ params }) {
       localStorage.setItem('lastWatched', JSON.stringify(stored));
     } catch {}
   }, [watchKey, decodedEp]);
-
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.load();
-      videoRef.current.play().catch(() => {});
-    }
-  }, [streamUrl]);
 
   return (
     <div className="watch-page">
@@ -53,10 +55,19 @@ export default function WatchPage({ params }) {
         <span className="nav-title">{epTitle}</span>
       </nav>
       <div className="video-wrap">
-        <video ref={videoRef} controls autoPlay playsInline preload="metadata">
-          <source src={streamUrl} type={mimeType} />
-          Your browser does not support the video tag.
-        </video>
+        <MediaPlayer
+          title={epTitle}
+          src={src}
+          autoPlay
+          playsInline
+          streamType="on-demand"
+          load="eager"
+          aspectRatio="16/9"
+          className="vds-player"
+        >
+          <MediaProvider />
+          <DefaultVideoLayout icons={defaultLayoutIcons} />
+        </MediaPlayer>
       </div>
       <div className="watch-info">
         <div className="watch-show-name">
