@@ -5,8 +5,22 @@ import Link from 'next/link';
 
 import '@vidstack/react/player/styles/default/theme.css';
 import '@vidstack/react/player/styles/default/layouts/video.css';
-import { MediaPlayer, MediaProvider } from '@vidstack/react';
+import { MediaPlayer, MediaProvider, isHLSProvider } from '@vidstack/react';
 import { defaultLayoutIcons, DefaultVideoLayout } from '@vidstack/react/player/layouts/default';
+
+// hls.js defaults stop fetching ~30s / 60MB ahead, which shows up as "loads a
+// bit, then waits". Keep ~5 min buffered ahead instead; the byte cap must be
+// raised too or it kicks in first at these durations.
+function onProviderChange(provider) {
+  if (isHLSProvider(provider)) {
+    provider.config = {
+      maxBufferLength: 300,
+      maxMaxBufferLength: 600,
+      maxBufferSize: 200 * 1000 * 1000,
+      backBufferLength: 90, // free memory behind playhead (mobile tabs); server re-serves cached segments on rewind
+    };
+  }
+}
 
 export default function WatchPage({ params }) {
   const { showName, path } = use(params);
@@ -62,6 +76,7 @@ export default function WatchPage({ params }) {
           playsInline
           streamType="on-demand"
           load="eager"
+          onProviderChange={onProviderChange}
           aspectRatio="16/9"
           className="vds-player"
         >
