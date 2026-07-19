@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 
 const HDD_ROOT = '/mnt/hdd';
-const SKIP = new Set(['lost+found']);
+const SKIP = new Set(['lost+found', 'Copy To Pi']);
 
 // In-memory cache — survives between requests, invalidates after 5 min
 let _cache = null;
