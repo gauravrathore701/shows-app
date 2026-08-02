@@ -33,6 +33,10 @@ export default function WatchPage({ params }) {
 
   const epTitle = decodedEp.replace(/\.(mp4|mkv|avi|mov|webm)$/i, '');
 
+  // Movie convention is "<Title (Year)>/<Title (Year)>.<ext>", so a flat show whose
+  // file name matches its folder is a single-file movie — no episode list to link back to.
+  const isMovie = !isSeasonal && epTitle === decodedShow;
+
   // HEVC/x265 files are transcoded server-side and served as HLS (segment-on-demand)
   // → real seeking + resilience. Everything else is a browser-native container, served
   // directly with byte-range seeking.
@@ -58,15 +62,21 @@ export default function WatchPage({ params }) {
       <nav className="nav">
         <Link href="/" className="nav-logo">🎬 Cursed Shrine</Link>
         <span className="nav-sep">›</span>
-        <Link href={`/show/${showName}`} className="nav-title">{decodedShow}</Link>
-        {isSeasonal && (
+        {isMovie ? (
+          <span className="nav-title">{decodedShow}</span>
+        ) : (
           <>
+            <Link href={`/show/${showName}`} className="nav-title">{decodedShow}</Link>
+            {isSeasonal && (
+              <>
+                <span className="nav-sep">›</span>
+                <Link href={seasonHref} className="nav-title">{decodedSeason}</Link>
+              </>
+            )}
             <span className="nav-sep">›</span>
-            <Link href={seasonHref} className="nav-title">{decodedSeason}</Link>
+            <span className="nav-title">{epTitle}</span>
           </>
         )}
-        <span className="nav-sep">›</span>
-        <span className="nav-title">{epTitle}</span>
       </nav>
       <div className="video-wrap">
         <MediaPlayer
@@ -88,14 +98,15 @@ export default function WatchPage({ params }) {
         <div className="watch-show-name">
           {isSeasonal ? `${decodedShow} › ${decodedSeason}` : decodedShow}
         </div>
-        <div className="watch-ep-name">{epTitle}</div>
+        {!isMovie && <div className="watch-ep-name">{epTitle}</div>}
         <div className="watch-nav">
-          {isSeasonal ? (
+          {isSeasonal && (
             <>
               <Link href={seasonHref} className="btn-nav">☰ All Episodes</Link>
               <Link href={`/show/${showName}`} className="btn-nav">📺 Seasons</Link>
             </>
-          ) : (
+          )}
+          {!isSeasonal && !isMovie && (
             <Link href={`/show/${showName}`} className="btn-nav">☰ All Episodes</Link>
           )}
           <Link href="/" className="btn-nav">⌂ Library</Link>

@@ -2,8 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import fs from 'fs';
 import path from 'path';
-import Link from 'next/link';
-import Image from 'next/image';
+import ShowsBrowser from './components/ShowsBrowser';
 
 const HDD_ROOT = '/mnt/hdd';
 const SKIP = new Set(['lost+found', 'Copy To Pi']);
@@ -38,6 +37,8 @@ function loadShows() {
         const allEntries = fs.readdirSync(showPath, { withFileTypes: true });
         const directVideos = allEntries.filter(e => e.isFile() && VIDEO_EXT_LOCAL.test(e.name));
         let episodeCount = directVideos.length;
+        // Movies hold exactly one video — used to link the card straight at the player
+        const videoFile = directVideos.length === 1 ? directVideos[0].name : null;
         if (episodeCount === 0) {
           const subDirs = allEntries.filter(e => e.isDirectory() && !e.name.startsWith('.'));
           for (const sub of subDirs) {
@@ -51,19 +52,30 @@ function loadShows() {
         let type = 'unknown';
         let heroImage = null;
         let suggestionPoint = 0;
+        let tags = [];
+        let addedDate = '';
         try {
           const meta = fs.readFileSync(path.join(showPath, 'metadata.txt'), 'utf8');
           const typeMatch = meta.match(/^type=(.+)/m);
           const heroMatch = meta.match(/^heroImage=(.+)/m);
           const spMatch = meta.match(/^suggestionPoint=(.+)/m);
+          const tagsMatch = meta.match(/^tags=(.+)/m);
+          const addedMatch = meta.match(/^addedDate=(.+)/m);
           if (typeMatch) type = typeMatch[1].trim();
           if (heroMatch) heroImage = heroMatch[1].trim();
           if (spMatch) suggestionPoint = parseInt(spMatch[1].trim(), 10) || 0;
+          if (tagsMatch) tags = tagsMatch[1].split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+          if (addedMatch) addedDate = addedMatch[1].trim();
         } catch {}
 
-        return { name: d.name, count: episodeCount, type, heroImage, suggestionPoint };
+        return { name: d.name, count: episodeCount, type, heroImage, suggestionPoint, tags, addedDate, videoFile };
       })
-      .sort((a, b) => b.suggestionPoint - a.suggestionPoint || a.name.localeCompare(b.name));
+      // Pinned shows first (suggestionPoint), then newest upload, then alphabetical
+      .sort((a, b) =>
+        b.suggestionPoint - a.suggestionPoint ||
+        b.addedDate.localeCompare(a.addedDate) ||
+        a.name.localeCompare(b.name)
+      );
   } catch {
     return [];
   }
@@ -80,18 +92,7 @@ function getShows() {
 export default async function ShowsPage({ searchParams }) {
   const params = await searchParams;
   const tab = params?.tab || 'all';
-  const allShows = getShows();
-
-  const typeFilter = TAB_TYPES[tab];
-  const shows = typeFilter ? allShows.filter(s => s.type === typeFilter) : allShows;
-
-  const tabs = [
-    { key: 'all',       label: 'All',        icon: '🏠' },
-    { key: 'series',    label: 'Series',     icon: '📺' },
-    { key: 'hollywood', label: 'Hollywood',  icon: '🎬' },
-    { key: 'bollywood', label: 'Bollywood',  icon: '🎭' },
-    { key: 'anime',     label: 'Anime',      icon: '🎌' },
-  ];
+  const q = params?.q || '';
 
   return (
     <>
@@ -102,45 +103,13 @@ export default async function ShowsPage({ searchParams }) {
       </nav>
       <div className="page">
         <h1 className="page-heading">My <span>Library</span></h1>
-
-        <div className="tabs">
-          {tabs.map(t => (
-            <Link key={t.key} href={`/?tab=${t.key}`} className={`tab${tab === t.key ? ' tab-active' : ''}`}>
-              {t.icon} {t.label}
-            </Link>
-          ))}
-        </div>
-
-        {shows.length === 0 ? (
-          <div className="empty">
-            <div className="empty-icon">📂</div>
-            <div className="empty-text">No shows found in this category.</div>
-          </div>
-        ) : (
-          <div className="shows-grid">
-            {shows.map(show => (
-              <Link key={show.name} href={`/show/${encodeURIComponent(show.name)}`}>
-                <div className="show-card">
-                  <div className="show-thumb">
-                    {show.heroImage ? (
-                      <Image
-                        src={show.heroImage}
-                        alt={show.name}
-                        fill
-                        sizes="220px"
-                        style={{ objectFit: 'cover', borderRadius: '8px' }}
-                      />
-                    ) : (
-                      TYPE_ICON[show.type] || '🎬'
-                    )}
-                  </div>
-                  <div className="show-name">{show.name}</div>
-                  <div className="show-meta">{show.count} {show.count !== 1 ? 'episodes' : 'episode'}</div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
+        <ShowsBrowser
+          shows={getShows()}
+          tabTypes={TAB_TYPES}
+          typeIcons={TYPE_ICON}
+          initialTab={tab}
+          initialQuery={q}
+        />
       </div>
     </>
   );
