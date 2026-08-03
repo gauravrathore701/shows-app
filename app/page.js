@@ -12,12 +12,14 @@ let _cache = null;
 let _cacheAt = 0;
 const CACHE_TTL = 5 * 60 * 1000;
 
+// A tab may cover more than one type — anime films are typed movie-anime so they
+// open the player directly, but they still belong under the Anime tab
 const TAB_TYPES = {
   all: null,
-  series: 'series',
-  hollywood: 'movie-hollywood',
-  bollywood: 'movie-bollywood',
-  anime: 'anime',
+  series: ['series'],
+  hollywood: ['movie-hollywood'],
+  bollywood: ['movie-bollywood'],
+  anime: ['anime', 'movie-anime'],
 };
 
 const TYPE_ICON = {
@@ -25,6 +27,7 @@ const TYPE_ICON = {
   'movie-hollywood': '🎬',
   'movie-bollywood': '🎭',
   'anime': '🎌',
+  'movie-anime': '🎌',
 };
 
 function loadShows() {

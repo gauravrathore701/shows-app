@@ -39,7 +39,7 @@ export default function ShowsBrowser({ shows, tabTypes, typeIcons, initialTab, i
 
   const results = useMemo(() => {
     const typeFilter = tabTypes[tab];
-    let list = typeFilter ? indexed.filter(s => s.type === typeFilter) : indexed;
+    let list = typeFilter ? indexed.filter(s => typeFilter.includes(s.type)) : indexed;
 
     const tokens = query.toLowerCase().replace(/[-_]/g, ' ').split(/\s+/).filter(Boolean);
     if (tokens.length) list = list.filter(s => tokens.every(t => s._hay.includes(t)));
