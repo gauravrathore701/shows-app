@@ -23,9 +23,48 @@ function getMime(filePath) {
   return MIME[path.extname(filePath).toLowerCase()] || 'video/mp4';
 }
 
-// Detect HEVC by filename tag
+// Detect HEVC by filename tag — only a fallback now, many files carry no tag
+// (e.g. Dororo is HEVC Main 10 + Opus but named "01 - The tale of Daigo.mkv").
 function isHEVC(filePath) {
   return /x265|hevc|h\.?265/i.test(path.basename(filePath));
+}
+
+// ── real codec probe ───────────────────────────────────────────────────────
+// Browsers only decode H.264 8-bit video with AAC/MP3 audio from a progressive
+// file. Anything else (HEVC, VP9-in-mkv, 10-bit, Opus/DTS/AC3/FLAC audio) must
+// go through the HLS transcode path, so the decision is made from the actual
+// streams rather than the filename.
+const BROWSER_VIDEO = new Set(['h264']);
+const BROWSER_AUDIO = new Set(['aac', 'mp3']);
+const EIGHT_BIT = new Set(['yuv420p', 'yuvj420p']);
+
+const probeCache = new Map();
+
+function probeMedia(filePath) {
+  if (probeCache.has(filePath)) return probeCache.get(filePath);
+  let info = null;
+  try {
+    const raw = execFileSync('ffprobe', [
+      '-v', 'quiet', '-print_format', 'json',
+      '-show_entries', 'stream=codec_type,codec_name,pix_fmt',
+      filePath,
+    ], { timeout: 8000 }).toString();
+    const streams = JSON.parse(raw).streams || [];
+    const v = streams.find((s) => s.codec_type === 'video') || {};
+    const a = streams.find((s) => s.codec_type === 'audio') || {};
+    info = { vcodec: v.codec_name || '', pixFmt: v.pix_fmt || '', acodec: a.codec_name || '' };
+  } catch { info = null; }
+  probeCache.set(filePath, info);
+  return info;
+}
+
+function needsTranscode(filePath) {
+  const info = probeMedia(filePath);
+  if (!info) return isHEVC(filePath);          // ffprobe failed → old filename heuristic
+  if (!BROWSER_VIDEO.has(info.vcodec)) return true;
+  if (info.pixFmt && !EIGHT_BIT.has(info.pixFmt)) return true;   // 10-bit H.264 too
+  if (info.acodec && !BROWSER_AUDIO.has(info.acodec)) return true;
+  return false;
 }
 
 // Duration cache — ffprobe is called once per file for seek support
@@ -252,9 +291,20 @@ const server = http.createServer((req, res) => {
   const urlPath = decodeURIComponent(req.url.replace(/^\//, '').split('?')[0]);
 
   // HLS routing: /<file>/index.m3u8  and  /<file>/segN.ts
-  // The "<file>" prefix is the real media path on disk.
+  // plus /<file>/codec.json — the watch page asks this first to learn whether
+  // the file plays natively or has to come through HLS.
   const playlistMatch = urlPath.match(/^(.+)\/index\.m3u8$/);
   const segmentMatch = urlPath.match(/^(.+)\/seg(\d+)\.ts$/);
+  const codecMatch = urlPath.match(/^(.+)\/codec\.json$/);
+  if (codecMatch) {
+    const mediaPath = path.join(HDD_ROOT, codecMatch[1]);
+    if (!mediaPath.startsWith(HDD_ROOT + '/')) { res.writeHead(403); res.end('Forbidden'); return; }
+    if (!fs.existsSync(mediaPath)) { res.writeHead(404); res.end('Not Found'); return; }
+    const info = probeMedia(mediaPath) || {};
+    res.writeHead(200, { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' });
+    res.end(JSON.stringify({ hls: needsTranscode(mediaPath), ...info }));
+    return;
+  }
   if (playlistMatch || segmentMatch) {
     const relFile = (playlistMatch || segmentMatch)[1];
     const mediaPath = path.join(HDD_ROOT, relFile);
@@ -287,8 +337,9 @@ const server = http.createServer((req, res) => {
     `range=${rangeHeader || '-'} ua="${(req.headers['user-agent'] || '-').slice(0, 70)}"`
   );
 
-  // HEVC → transcode on the fly (legacy progressive path; watch page uses HLS)
-  if (isHEVC(filePath)) {
+  // Undecodable in a browser → transcode on the fly (legacy progressive path;
+  // watch page uses HLS)
+  if (needsTranscode(filePath)) {
     serveTranscoded(filePath, fileSize, res, rangeHeader);
     return;
   }

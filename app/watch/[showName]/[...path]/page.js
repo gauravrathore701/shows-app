@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 
 import '@vidstack/react/player/styles/default/theme.css';
@@ -37,12 +37,25 @@ export default function WatchPage({ params }) {
   // file name matches its folder is a single-file movie — no episode list to link back to.
   const isMovie = !isSeasonal && epTitle === decodedShow;
 
-  // HEVC/x265 files are transcoded server-side and served as HLS (segment-on-demand)
-  // → real seeking + resilience. Everything else is a browser-native container, served
-  // directly with byte-range seeking.
-  const isHevc = /x265|hevc|h\.?265/i.test(decodedEp);
+  // Files the browser can't decode (HEVC, 10-bit, Opus/DTS/AC3 audio) are transcoded
+  // server-side and served as HLS (segment-on-demand) → real seeking + resilience.
+  // Everything else is served directly with byte-range seeking. The filename tells us
+  // nothing reliable (Dororo is HEVC + Opus with a plain episode name), so the server
+  // ffprobes the file and answers on /codec.json; the tag regex is only the first guess
+  // while that request is in flight.
   const fileUrl = `/api/stream/${encodeURIComponent(decodedShow)}/${decodedPath.map(encodeURIComponent).join('/')}`;
-  const src = isHevc
+  const [useHls, setUseHls] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${fileUrl}/codec.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled) setUseHls(d ? !!d.hls : /x265|hevc|h\.?265/i.test(decodedEp)); })
+      .catch(() => { if (!cancelled) setUseHls(/x265|hevc|h\.?265/i.test(decodedEp)); });
+    return () => { cancelled = true; };
+  }, [fileUrl, decodedEp]);
+
+  const src = useHls
     ? { src: `${fileUrl}/index.m3u8`, type: 'application/x-mpegurl' }
     : fileUrl;
 
@@ -79,6 +92,7 @@ export default function WatchPage({ params }) {
         )}
       </nav>
       <div className="video-wrap">
+        {useHls === null ? null : (
         <MediaPlayer
           title={epTitle}
           src={src}
@@ -93,6 +107,7 @@ export default function WatchPage({ params }) {
           <MediaProvider />
           <DefaultVideoLayout icons={defaultLayoutIcons} />
         </MediaPlayer>
+        )}
       </div>
       <div className="watch-info">
         <div className="watch-show-name">

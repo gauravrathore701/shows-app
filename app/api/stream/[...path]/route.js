@@ -9,8 +9,37 @@ function getMime(filePath) {
   return map[ext] || 'video/mp4';
 }
 
+const VIDEO_PORT = 4179;
+
+// Virtual paths owned by video-server: /<file>/index.m3u8, /<file>/segN.ts,
+// /<file>/codec.json. Requests through the proxy (4180) never reach this route,
+// but hitting Next directly on 4178 (LAN) must still get HLS + the codec probe,
+// otherwise every HEVC file falls back to a raw stream the browser can't decode.
+const VIRTUAL = /^(index\.m3u8|seg\d+\.ts|codec\.json)$/;
+
+async function forwardToVideoServer(segments) {
+  const url = `http://localhost:${VIDEO_PORT}/` +
+    segments.map((s) => encodeURIComponent(decodeURIComponent(s))).join('/');
+  try {
+    const upstream = await fetch(url);
+    const headers = new Headers();
+    for (const k of ['content-type', 'content-length', 'cache-control']) {
+      const v = upstream.headers.get(k);
+      if (v) headers.set(k, v);
+    }
+    return new Response(upstream.body, { status: upstream.status, headers });
+  } catch {
+    return new Response('Video server unavailable', { status: 502 });
+  }
+}
+
 export async function GET(request, { params }) {
   const segments = (await params).path;
+
+  if (VIRTUAL.test(decodeURIComponent(segments[segments.length - 1] || ''))) {
+    return forwardToVideoServer(segments);
+  }
+
   const filePath = path.join(HDD_ROOT, ...segments.map(decodeURIComponent));
 
   // Path traversal guard
