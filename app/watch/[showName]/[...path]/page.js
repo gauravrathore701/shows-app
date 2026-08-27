@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { use, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import '@vidstack/react/player/styles/default/theme.css';
@@ -8,11 +8,19 @@ import '@vidstack/react/player/styles/default/layouts/video.css';
 import { MediaPlayer, MediaProvider, isHLSProvider } from '@vidstack/react';
 import { defaultLayoutIcons, DefaultVideoLayout } from '@vidstack/react/player/layouts/default';
 
+import { fetchProgress, saveProgress, writeLocal } from '../../../lib/progress';
+
+// How often the playhead is pushed to the server while playing.
+const SAVE_EVERY_SEC = 15;
+// Below this the resume prompt is pointless; near the end we restart instead.
+const RESUME_MIN_SEC = 30;
+const RESUME_MAX_RATIO = 0.95;
+
 // hls.js defaults stop fetching ~30s / 60MB ahead, which shows up as "loads a
 // bit, then waits". Keep ~5 min buffered ahead instead; the byte cap must be
 // raised too or it kicks in first at these durations.
-function onProviderChange(provider) {
-  if (isHLSProvider(provider)) {
+function tuneProvider(provider) {
+  if (provider && isHLSProvider(provider)) {
     provider.config = {
       maxBufferLength: 300,
       maxMaxBufferLength: 600,
@@ -62,13 +70,93 @@ export default function WatchPage({ params }) {
   const watchKey = isSeasonal ? `${decodedShow}/${decodedSeason}` : decodedShow;
   const seasonHref = isSeasonal ? `/show/${showName}/${encodeURIComponent(decodedSeason)}` : null;
 
+  // Progress is read off the native <video> element rather than the player's own
+  // state, so nothing here depends on vidstack's event-detail shapes.
+  const video = useRef(null);
+  const lastSent = useRef(0);
+  const resumeAt = useRef(0);
+  const resumed = useRef(false);
+  const canPlayed = useRef(false);
+
   useEffect(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('lastWatched') || '{}');
-      stored[watchKey] = decodedEp;
-      localStorage.setItem('lastWatched', JSON.stringify(stored));
-    } catch {}
+    let cancelled = false;
+    // Mirror locally right away so the episode list is right even if the API is down.
+    writeLocal(watchKey, decodedEp);
+    resumed.current = false;
+    canPlayed.current = false;
+    lastSent.current = 0;
+    resumeAt.current = 0;
+
+    // Playback never waits on this request — whichever lands last (the answer or
+    // `canplay`) performs the seek, so a slow or dead API just means no resume.
+    fetchProgress(watchKey)
+      .then((items) => {
+        if (cancelled) return;
+        const mine = items.find((it) => it.path === decodedEp);
+        if (!mine || mine.finished || !(mine.duration > 0)) return;
+        const ratio = mine.position / mine.duration;
+        if (mine.position > RESUME_MIN_SEC && ratio < RESUME_MAX_RATIO) {
+          resumeAt.current = mine.position;
+          if (canPlayed.current) seekToResume();
+        }
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
   }, [watchKey, decodedEp]);
+
+  const push = useCallback((finished) => {
+    const v = video.current;
+    if (!v) return;
+    const position = v.currentTime || 0;
+    const duration = Number.isFinite(v.duration) ? v.duration : 0;
+    if (!duration) return;
+    lastSent.current = position;
+    saveProgress({ show: watchKey, path: decodedEp, position, duration, finished });
+  }, [watchKey, decodedEp]);
+
+  // Leaving the tab / backgrounding the app is the most common way a watch ends.
+  useEffect(() => {
+    const flush = () => push(false);
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', flush);
+      flush();
+    };
+  }, [push]);
+
+  function seekToResume() {
+    if (resumed.current) return;
+    const v = video.current;
+    if (!v || !(resumeAt.current > 0)) return;
+    resumed.current = true;
+    v.currentTime = resumeAt.current;
+  }
+
+  // `provider.video` only exists once the provider is set up, so capture it in
+  // both callbacks and keep whichever arrives first.
+  function captureVideo(provider) {
+    video.current = provider?.video ?? video.current ?? null;
+  }
+
+  function onProviderChange(provider) {
+    tuneProvider(provider);
+    captureVideo(provider);
+  }
+
+  function onCanPlay() {
+    canPlayed.current = true;
+    seekToResume();
+  }
+
+  function onTimeUpdate() {
+    const v = video.current;
+    if (!v) return;
+    if (Math.abs(v.currentTime - lastSent.current) < SAVE_EVERY_SEC) return;
+    push(false);
+  }
 
   return (
     <div className="watch-page">
@@ -101,6 +189,11 @@ export default function WatchPage({ params }) {
           streamType="on-demand"
           load="eager"
           onProviderChange={onProviderChange}
+          onProviderSetup={captureVideo}
+          onCanPlay={onCanPlay}
+          onTimeUpdate={onTimeUpdate}
+          onPause={() => push(false)}
+          onEnded={() => push(true)}
           aspectRatio="16/9"
           className="vds-player"
         >
