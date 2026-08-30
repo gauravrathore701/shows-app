@@ -161,7 +161,7 @@ export default function WatchPage({ params }) {
   return (
     <div className="watch-page">
       <nav className="nav">
-        <Link href="/" className="nav-logo">🎬 Cursed Shrine</Link>
+        <Link href="/" className="nav-logo"><img src="/favicon-mark.svg" alt="" className="nav-mark" />Cursed Shrine</Link>
         <span className="nav-sep">›</span>
         {isMovie ? (
           <span className="nav-title">{decodedShow}</span>

@@ -34,7 +34,7 @@ export default async function SeasonPage({ params }) {
   return (
     <>
       <nav className="nav">
-        <Link href="/" className="nav-logo">🎬 Cursed Shrine</Link>
+        <Link href="/" className="nav-logo"><img src="/favicon-mark.svg" alt="" className="nav-mark" />Cursed Shrine</Link>
         <span className="nav-sep">›</span>
         <Link href={`/show/${showName}`} className="nav-title">{decodedShow}</Link>
         <span className="nav-sep">›</span>

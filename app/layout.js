@@ -4,6 +4,12 @@ import AuthGate from './components/AuthGate';
 export const metadata = {
   title: 'Cursed Shrine — Shows',
   description: 'Personal media library',
+  icons: {
+    icon: [
+      { url: '/favicon-mark.svg', type: 'image/svg+xml' },
+    ],
+    apple: '/logo-icon.svg',
+  },
 };
 
 export default function RootLayout({ children }) {

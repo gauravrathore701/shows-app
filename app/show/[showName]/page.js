@@ -68,7 +68,7 @@ export default async function ShowPage({ params }) {
   return (
     <>
       <nav className="nav">
-        <Link href="/" className="nav-logo">🎬 Cursed Shrine</Link>
+        <Link href="/" className="nav-logo"><img src="/favicon-mark.svg" alt="" className="nav-mark" />Cursed Shrine</Link>
         <span className="nav-sep">›</span>
         <span className="nav-title">{decoded}</span>
       </nav>

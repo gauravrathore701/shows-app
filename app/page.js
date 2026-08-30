@@ -100,7 +100,7 @@ export default async function ShowsPage({ searchParams }) {
   return (
     <>
       <nav className="nav">
-        <span className="nav-logo">🎬 Cursed Shrine</span>
+        <span className="nav-logo"><img src="/favicon-mark.svg" alt="" className="nav-mark" />Cursed Shrine</span>
         <span className="nav-sep">›</span>
         <span className="nav-title">Shows</span>
       </nav>
