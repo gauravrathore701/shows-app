@@ -2,6 +2,7 @@
 
 import { use, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import '@vidstack/react/player/styles/default/theme.css';
 import '@vidstack/react/player/styles/default/layouts/video.css';
@@ -15,6 +16,9 @@ const SAVE_EVERY_SEC = 15;
 // Below this the resume prompt is pointless; near the end we restart instead.
 const RESUME_MIN_SEC = 30;
 const RESUME_MAX_RATIO = 0.95;
+// Netflix-style next-episode card: appears this many seconds before the end and
+// counts down to an automatic jump.
+const NEXT_UP_SEC = 10;
 
 // hls.js defaults stop fetching ~30s / 60MB ahead, which shows up as "loads a
 // bit, then waits". Keep ~5 min buffered ahead instead; the byte cap must be
@@ -62,6 +66,48 @@ export default function WatchPage({ params }) {
       .catch(() => { if (!cancelled) setUseHls(/x265|hevc|h\.?265/i.test(decodedEp)); });
     return () => { cancelled = true; };
   }, [fileUrl, decodedEp]);
+
+  // ── Next episode ────────────────────────────────────────────────────────
+  // The watch page is a client component and knows only its own path, so the
+  // sibling list comes from the API. Movies have no siblings worth fetching.
+  const [nextEp, setNextEp] = useState(null);
+  const [countdown, setCountdown] = useState(null);   // null = card hidden
+  const [cancelled, setCancelled] = useState(false);
+  const router = useRouter();
+  const advanced = useRef(false);
+
+  useEffect(() => {
+    setNextEp(null);
+    setCountdown(null);
+    setCancelled(false);
+    advanced.current = false;
+    if (isMovie) return;
+
+    let stale = false;
+    const listPath = isSeasonal
+      ? `${encodeURIComponent(decodedShow)}/${encodeURIComponent(decodedSeason)}`
+      : encodeURIComponent(decodedShow);
+
+    fetch(`/api/episodes/${listPath}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (stale || !d?.episodes?.length) return;
+        const i = d.episodes.indexOf(decodedEp);
+        // -1 means the file vanished or was renamed; last episode has no next.
+        if (i >= 0 && i < d.episodes.length - 1) setNextEp(d.episodes[i + 1]);
+      })
+      .catch(() => {});
+
+    return () => { stale = true; };
+  }, [decodedShow, decodedSeason, decodedEp, isSeasonal, isMovie]);
+
+  const nextHref = nextEp
+    ? (isSeasonal
+        ? `/watch/${showName}/${encodeURIComponent(decodedSeason)}/${encodeURIComponent(nextEp)}`
+        : `/watch/${showName}/${encodeURIComponent(nextEp)}`)
+    : null;
+
+  const nextTitle = nextEp ? nextEp.replace(/\.(mp4|mkv|avi|mov|webm)$/i, '') : '';
 
   const src = useHls
     ? { src: `${fileUrl}/index.m3u8`, type: 'application/x-mpegurl' }
@@ -115,6 +161,15 @@ export default function WatchPage({ params }) {
     saveProgress({ show: watchKey, path: decodedEp, position, duration, finished });
   }, [watchKey, decodedEp]);
 
+  // Declared after `push` so it can depend on it. Marks the episode finished
+  // before navigating, otherwise the list still shows it as in-progress.
+  const goNext = useCallback(() => {
+    if (advanced.current || !nextHref) return;
+    advanced.current = true;
+    push(true);
+    router.push(nextHref);
+  }, [nextHref, push, router]);
+
   // Leaving the tab / backgrounding the app is the most common way a watch ends.
   useEffect(() => {
     const flush = () => push(false);
@@ -154,8 +209,23 @@ export default function WatchPage({ params }) {
   function onTimeUpdate() {
     const v = video.current;
     if (!v) return;
+
+    // The card is driven by the playhead, not a timer, so scrubbing backwards
+    // hides it again and scrubbing forwards brings it straight back.
+    if (nextHref && !cancelled && Number.isFinite(v.duration) && v.duration > 0) {
+      const left = v.duration - v.currentTime;
+      setCountdown(left <= NEXT_UP_SEC ? Math.max(0, Math.ceil(left)) : null);
+    }
+
     if (Math.abs(v.currentTime - lastSent.current) < SAVE_EVERY_SEC) return;
     push(false);
+  }
+
+  // Some files end a beat early, or the last timeupdate lands past the end, so
+  // `ended` is what actually advances. The countdown is only the visible part.
+  function onEnded() {
+    push(true);
+    if (nextHref && !cancelled) goNext();
   }
 
   return (
@@ -193,13 +263,31 @@ export default function WatchPage({ params }) {
           onCanPlay={onCanPlay}
           onTimeUpdate={onTimeUpdate}
           onPause={() => push(false)}
-          onEnded={() => push(true)}
+          onEnded={onEnded}
           aspectRatio="16/9"
           className="vds-player"
         >
           <MediaProvider />
           <DefaultVideoLayout icons={defaultLayoutIcons} />
         </MediaPlayer>
+        )}
+        {countdown !== null && nextHref && !cancelled && (
+          <div className="next-up" role="dialog" aria-label="Next episode">
+            <div className="next-up-label">Next episode in {countdown}s</div>
+            <div className="next-up-title">{nextTitle}</div>
+            <div className="next-up-actions">
+              <button type="button" className="next-up-play" onClick={goNext}>
+                ▶ Play Now
+              </button>
+              <button
+                type="button"
+                className="next-up-cancel"
+                onClick={() => { setCancelled(true); setCountdown(null); }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
       </div>
       <div className="watch-info">
