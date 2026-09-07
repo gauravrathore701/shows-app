@@ -20,6 +20,33 @@ function readHeroImage(dirPath) {
   }
 }
 
+// episodes.txt maps episode number -> title. Seasonal shows keep one per
+// season folder; a flat show (One Piece) keeps a single file in the show
+// root keyed by absolute episode number.
+function readTitles(dirPath) {
+  try {
+    const raw = fs.readFileSync(path.join(dirPath, 'episodes.txt'), 'utf8');
+    const map = {};
+    for (const line of raw.split('\n')) {
+      const m = line.match(/^\s*(\d+)\s*=\s*(.+?)\s*$/);
+      if (m) map[String(Number(m[1])).padStart(2, '0')] = m[2];
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+// SxxEyy when present, otherwise the last number in the name — which is what
+// absolute-numbered anime uses ("1P Episode 1172.mp4").
+function episodeNumber(filename, i) {
+  const se = filename.match(/S\d{1,2}E(\d{1,4})/i);
+  if (se) return String(Number(se[1])).padStart(2, '0');
+  const tail = filename.replace(/\.[^.]+$/, '').match(/(\d{1,4})\D*$/);
+  if (tail) return String(Number(tail[1])).padStart(2, '0');
+  return String(i + 1).padStart(2, '0');
+}
+
 function getShowData(showName) {
   const showPath = path.join(HDD_ROOT, showName);
   if (!showPath.startsWith(HDD_ROOT) || !fs.existsSync(showPath)) return null;
@@ -34,7 +61,14 @@ function getShowData(showName) {
     });
 
   if (directVideos.length > 0) {
-    return { type: 'flat', episodes: directVideos.map((e, i) => ({ ...e, index: i })) };
+    const titles = readTitles(showPath);
+    return {
+      type: 'flat',
+      episodes: directVideos.map((e, i) => {
+        const epNum = episodeNumber(e.name, i);
+        return { ...e, index: i, epNum, title: titles[epNum] || null };
+      }),
+    };
   }
 
   const seasons = entries
@@ -83,26 +117,41 @@ export default async function ShowPage({ params }) {
               <div className="empty-text">No seasons found.</div>
             </div>
           ) : (
-            <div className="shows-grid">
-              {data.seasons.map(season => (
-                <Link key={season.name} href={`/show/${showName}/${encodeURIComponent(season.name)}`}>
-                  <div className="show-card">
-                    <div className="show-thumb">
-                      {season.heroImage ? (
-                        <Image
-                          src={season.heroImage}
-                          alt={season.name}
-                          fill
-                          sizes="220px"
-                          style={{ objectFit: 'cover', borderRadius: '8px' }}
-                        />
-                      ) : '📺'}
+            <div className="season-grid">
+              {data.seasons.map(season => {
+                // "Season 03" -> "03". Season 0 is the specials folder.
+                const num = season.name.match(/(\d+)/)?.[1] ?? null;
+                const isSpecials = num !== null && Number(num) === 0;
+                return (
+                  <Link key={season.name} href={`/show/${showName}/${encodeURIComponent(season.name)}`}>
+                    <div className="season-card">
+                      <div className="season-art">
+                        {season.heroImage ? (
+                          <Image
+                            src={season.heroImage}
+                            alt={season.name}
+                            fill
+                            sizes="(max-width: 640px) 45vw, 260px"
+                            style={{ objectFit: 'cover' }}
+                          />
+                        ) : (
+                          <span className="season-num" aria-hidden="true">
+                            {isSpecials ? 'SP' : (num ?? '—')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="season-body">
+                        <div className="season-name">
+                          {isSpecials ? 'Specials' : season.name}
+                        </div>
+                        <div className="season-meta">
+                          {season.count} {season.count !== 1 ? 'episodes' : 'episode'}
+                        </div>
+                      </div>
                     </div>
-                    <div className="show-name">{season.name}</div>
-                    <div className="show-meta">{season.count} {season.count !== 1 ? 'episodes' : 'episode'}</div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           )
         ) : (

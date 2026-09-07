@@ -14,3 +14,10 @@ venv/
 .venv/
 dist/
 build/
+
+# Local pre-edit backups — never publish
+backups/
+*.bak
+*.bak-*
+*.bak.*
+*.bak2-*

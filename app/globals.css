@@ -290,7 +290,9 @@ a { color: inherit; text-decoration: none; }
 
 /* ── LOGOUT BUTTON ── */
 .logout-btn {
-  position: fixed; bottom: 1.5rem; right: 1.5rem;
+  /* Top right. Sits above the page nav, which is static, so a fixed button
+     here does not cover any control — the nav's own links start at the left. */
+  position: fixed; top: 1rem; right: 1.5rem;
   width: 42px; height: 42px; border-radius: 50%;
   background: #111; border: 1px solid #333; color: #555;
   font-size: 1.1rem; cursor: pointer;
@@ -358,4 +360,86 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 640px) {
   .next-up { right: .75rem; left: .75rem; bottom: 4.5rem; width: auto; padding: .8rem .9rem; }
   .next-up-title { margin-bottom: .6rem; }
+}
+
+/* Next-episode button in the vidstack control bar (slot: afterPlayButton).
+   Sizing comes from .vds-button; only the icon colour is ours. */
+.next-ep-button .vds-icon { width: 80%; height: 80%; }
+.next-ep-button:hover { color: var(--accent, #CED4DA); }
+
+/* ── Season cards ──────────────────────────────────────
+   Seasons are not posters. The old .show-card gave them a
+   2:3 box that was empty for every show without season
+   art, so it read as broken. These are wide 16/9 tiles
+   with the season number as the artwork when none exists. */
+.season-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.season-card {
+  background: #111;
+  border: 1px solid #222;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color .2s ease,
+              transform .2s ease,
+              box-shadow .2s ease;
+}
+.season-card:hover {
+  border-color: #555;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.55);
+}
+
+.season-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(135deg, #1c1c1c 0%, #141414 55%, #101010 100%);
+  border-bottom: 1px solid #222;
+}
+
+/* Big outlined numeral, sits behind the label. */
+.season-num {
+  font-size: clamp(2.6rem, 7vw, 3.6rem);
+  font-weight: 800;
+  letter-spacing: .04em;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1.5px #3a3a3a;
+  user-select: none;
+  transition: -webkit-text-stroke-color .2s ease;
+}
+.season-card:hover .season-num {
+  -webkit-text-stroke-color: #6a6a6a;
+}
+
+.season-body {
+  padding: .7rem .9rem .8rem;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+.season-name {
+  font-size: .92rem;
+  font-weight: 700;
+  color: #f0f0f0;
+  line-height: 1.25;
+}
+.season-meta { font-size: .72rem; color: #777; }
+
+@media (max-width: 640px) {
+  .season-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: .7rem;
+  }
+  .season-body { padding: .6rem .7rem .7rem; }
 }

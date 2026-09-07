@@ -15,6 +15,9 @@ import { fetchProgress, saveProgress, writeLocal } from '../../../lib/progress';
 const SAVE_EVERY_SEC = 15;
 // Below this the resume prompt is pointless; near the end we restart instead.
 const RESUME_MIN_SEC = 30;
+// How close to the end still counts as "it finished". Some files stop a beat
+// early, so this cannot be zero — but it must stay far smaller than an episode.
+const END_SLACK_SEC = 15;
 const RESUME_MAX_RATIO = 0.95;
 // Netflix-style next-episode card: appears this many seconds before the end and
 // counts down to an automatic jump.
@@ -43,11 +46,25 @@ export default function WatchPage({ params }) {
   const decodedSeason = isSeasonal ? decodedPath[0] : null;
   const decodedEp = isSeasonal ? decodedPath[1] : decodedPath[0];
 
-  const epTitle = decodedEp.replace(/\.(mp4|mkv|avi|mov|webm)$/i, '');
+  const epFile = decodedEp.replace(/\.(mp4|mkv|avi|mov|webm)$/i, '');
+
+  // Number from the filename: SxxEyy when present, otherwise the last number
+  // in the name, which is what absolute-numbered anime uses.
+  const epNum = (() => {
+    const se = decodedEp.match(/S\d{1,2}E(\d{1,4})/i);
+    if (se) return String(Number(se[1])).padStart(2, '0');
+    const tail = epFile.match(/(\d{1,4})\D*$/);
+    return tail ? String(Number(tail[1])).padStart(2, '0') : null;
+  })();
+
+  // Filled from /api/episodes once it answers. Until then the filename is
+  // shown, so the header never sits empty while the request is in flight.
+  const [epName, setEpName] = useState(null);
+  const epTitle = epName || epFile;
 
   // Movie convention is "<Title (Year)>/<Title (Year)>.<ext>", so a flat show whose
   // file name matches its folder is a single-file movie — no episode list to link back to.
-  const isMovie = !isSeasonal && epTitle === decodedShow;
+  const isMovie = !isSeasonal && epFile === decodedShow;
 
   // Files the browser can't decode (HEVC, 10-bit, Opus/DTS/AC3 audio) are transcoded
   // server-side and served as HLS (segment-on-demand) → real seeking + resilience.
@@ -60,7 +77,11 @@ export default function WatchPage({ params }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${fileUrl}/codec.json`)
+    // no-store: this answer decides HLS vs raw. A wrong one cached in the
+    // browser (it used to ship max-age=86400 even when ffprobe had failed)
+    // leaves every later visit fetching a raw HEVC file — a black player
+    // that no reload can fix.
+    fetch(`${fileUrl}/codec.json`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (!cancelled) setUseHls(d ? !!d.hls : /x265|hevc|h\.?265/i.test(decodedEp)); })
       .catch(() => { if (!cancelled) setUseHls(/x265|hevc|h\.?265/i.test(decodedEp)); });
@@ -78,6 +99,7 @@ export default function WatchPage({ params }) {
 
   useEffect(() => {
     setNextEp(null);
+    setEpName(null);   // otherwise the previous episode's title lingers
     setCountdown(null);
     setCancelled(false);
     advanced.current = false;
@@ -92,6 +114,9 @@ export default function WatchPage({ params }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (stale || !d?.episodes?.length) return;
+        // Same response carries the title map — no second request.
+        const t = epNum && d.titles ? d.titles[epNum] : null;
+        if (t) setEpName(`Episode ${epNum} - ${t}`);
         const i = d.episodes.indexOf(decodedEp);
         // -1 means the file vanished or was renamed; last episode has no next.
         if (i >= 0 && i < d.episodes.length - 1) setNextEp(d.episodes[i + 1]);
@@ -99,7 +124,7 @@ export default function WatchPage({ params }) {
       .catch(() => {});
 
     return () => { stale = true; };
-  }, [decodedShow, decodedSeason, decodedEp, isSeasonal, isMovie]);
+  }, [decodedShow, decodedSeason, decodedEp, isSeasonal, isMovie, epNum]);
 
   const nextHref = nextEp
     ? (isSeasonal
@@ -170,6 +195,25 @@ export default function WatchPage({ params }) {
     router.push(nextHref);
   }, [nextHref, push, router]);
 
+  // Persistent next-episode control, dropped into vidstack's control bar
+  // right after play/pause. Reuses goNext, so the watched-flag write and the
+  // `advanced` guard behave exactly as they do for autoplay.
+  const nextEpButton = nextHref ? (
+    <button
+      type="button"
+      className="vds-button next-ep-button"
+      aria-label="Next episode"
+      title={nextTitle ? `Next: ${nextTitle}` : 'Next episode'}
+      onClick={goNext}
+    >
+      <svg className="vds-icon" viewBox="0 0 24 24" aria-hidden="true"
+           fill="currentColor" width="80%" height="80%">
+        <path d="M6 5.5v13l9-6.5-9-6.5z" />
+        <rect x="16.5" y="5.5" width="2" height="13" rx="1" />
+      </svg>
+    </button>
+  ) : null;
+
   // Leaving the tab / backgrounding the app is the most common way a watch ends.
   useEffect(() => {
     const flush = () => push(false);
@@ -212,7 +256,8 @@ export default function WatchPage({ params }) {
 
     // The card is driven by the playhead, not a timer, so scrubbing backwards
     // hides it again and scrubbing forwards brings it straight back.
-    if (nextHref && !cancelled && Number.isFinite(v.duration) && v.duration > 0) {
+    if (nextHref && !cancelled && v.currentTime > 0 &&
+        Number.isFinite(v.duration) && v.duration > 0) {
       const left = v.duration - v.currentTime;
       setCountdown(left <= NEXT_UP_SEC ? Math.max(0, Math.ceil(left)) : null);
     }
@@ -221,9 +266,20 @@ export default function WatchPage({ params }) {
     push(false);
   }
 
-  // Some files end a beat early, or the last timeupdate lands past the end, so
-  // `ended` is what actually advances. The countdown is only the visible part.
+  // `ended` is what advances — the countdown is only the visible part. But on a
+  // transcoded HLS stream `ended` is NOT trustworthy on its own: a failed
+  // segment fetch, or a source that never loaded, fires it with the playhead
+  // still at zero. That looked like "the episode skips itself the moment you
+  // open it". So require that playback actually reached the end.
   function onEnded() {
+    const v = video.current;
+    const dur = v?.duration;
+    const at = v?.currentTime ?? 0;
+    const reallyEnded =
+      canPlayed.current &&
+      Number.isFinite(dur) && dur > 0 &&
+      at >= dur - END_SLACK_SEC;
+    if (!reallyEnded) return;
     push(true);
     if (nextHref && !cancelled) goNext();
   }
@@ -268,7 +324,10 @@ export default function WatchPage({ params }) {
           className="vds-player"
         >
           <MediaProvider />
-          <DefaultVideoLayout icons={defaultLayoutIcons} />
+          <DefaultVideoLayout
+            icons={defaultLayoutIcons}
+            slots={{ afterPlayButton: nextEpButton }}
+          />
         </MediaPlayer>
         )}
         {countdown !== null && nextHref && !cancelled && (

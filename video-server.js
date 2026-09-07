@@ -54,7 +54,10 @@ function probeMedia(filePath) {
     const a = streams.find((s) => s.codec_type === 'audio') || {};
     info = { vcodec: v.codec_name || '', pixFmt: v.pix_fmt || '', acodec: a.codec_name || '' };
   } catch { info = null; }
-  probeCache.set(filePath, info);
+  // Only cache a SUCCESSFUL probe. Caching null meant one ffprobe failure
+  // during a USB dropout poisoned this file for the life of the process:
+  // needsTranscode() then fell back to the filename heuristic forever.
+  if (info) probeCache.set(filePath, info);
   return info;
 }
 
@@ -179,7 +182,29 @@ function serveHlsSegment(filePath, index, res) {
       if (!res.headersSent) { res.writeHead(500); res.end('Segment transcode failed'); }
     });
 
-    res.on('close', () => ff.kill('SIGKILL'));
+    // Killing on res 'close' alone is not enough. The response travels
+    // browser -> cloudflared -> proxy(4180) -> here, and a browser abort does
+    // not always reach us: the proxy can keep its upstream socket open, so
+    // 'close' never fires and FFmpeg transcodes on for nobody. Two of those
+    // pinned this 4-core Pi at load 14.8 today, which starved the very
+    // segment requests the player was waiting on — a black screen.
+    //
+    // So also watch progress. If not one byte is consumed for IDLE_KILL_MS,
+    // the far end is gone and the transcode is pure waste. Kill it.
+    const IDLE_KILL_MS = 120_000;
+    let lastWrite = Date.now();
+    ff.stdout.on('data', () => { lastWrite = Date.now(); });
+    const idleTimer = setInterval(() => {
+      if (Date.now() - lastWrite > IDLE_KILL_MS) {
+        console.error('[video-server] idle', IDLE_KILL_MS / 1000 + 's —',
+          'killing transcode of', path.basename(filePath));
+        ff.kill('SIGKILL');
+        if (!res.destroyed) res.destroy();
+      }
+    }, 15_000);
+    idleTimer.unref?.();
+    ff.on('close', () => clearInterval(idleTimer));
+    res.on('close', () => { clearInterval(idleTimer); ff.kill('SIGKILL'); });
   }
 
   attempt(1);
@@ -269,7 +294,29 @@ function serveTranscoded(filePath, fileSize, res, rangeHeader) {
       if (!res.headersSent) { res.writeHead(500); res.end('Transcode error'); }
     });
 
-    res.on('close', () => ff.kill('SIGKILL'));
+    // Killing on res 'close' alone is not enough. The response travels
+    // browser -> cloudflared -> proxy(4180) -> here, and a browser abort does
+    // not always reach us: the proxy can keep its upstream socket open, so
+    // 'close' never fires and FFmpeg transcodes on for nobody. Two of those
+    // pinned this 4-core Pi at load 14.8 today, which starved the very
+    // segment requests the player was waiting on — a black screen.
+    //
+    // So also watch progress. If not one byte is consumed for IDLE_KILL_MS,
+    // the far end is gone and the transcode is pure waste. Kill it.
+    const IDLE_KILL_MS = 120_000;
+    let lastWrite = Date.now();
+    ff.stdout.on('data', () => { lastWrite = Date.now(); });
+    const idleTimer = setInterval(() => {
+      if (Date.now() - lastWrite > IDLE_KILL_MS) {
+        console.error('[video-server] idle', IDLE_KILL_MS / 1000 + 's —',
+          'killing transcode of', path.basename(filePath));
+        ff.kill('SIGKILL');
+        if (!res.destroyed) res.destroy();
+      }
+    }, 15_000);
+    idleTimer.unref?.();
+    ff.on('close', () => clearInterval(idleTimer));
+    res.on('close', () => { clearInterval(idleTimer); ff.kill('SIGKILL'); });
   }
 
   attempt(1);
@@ -300,9 +347,17 @@ const server = http.createServer((req, res) => {
     const mediaPath = path.join(HDD_ROOT, codecMatch[1]);
     if (!mediaPath.startsWith(HDD_ROOT + '/')) { res.writeHead(403); res.end('Forbidden'); return; }
     if (!fs.existsSync(mediaPath)) { res.writeHead(404); res.end('Not Found'); return; }
-    const info = probeMedia(mediaPath) || {};
-    res.writeHead(200, { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' });
-    res.end(JSON.stringify({ hls: needsTranscode(mediaPath), ...info }));
+    const info = probeMedia(mediaPath);
+    // A day of caching is only safe when the probe actually answered. If
+    // ffprobe failed, hls is a filename GUESS — and a wrong guess cached for
+    // 24h leaves the browser fetching a raw HEVC file it cannot decode, which
+    // looks exactly like "the video is broken". Tell caches not to keep it.
+    res.writeHead(200, {
+      ...CORS,
+      'Content-Type': 'application/json',
+      'Cache-Control': info ? 'public, max-age=86400' : 'no-store',
+    });
+    res.end(JSON.stringify({ hls: needsTranscode(mediaPath), probed: !!info, ...(info || {}) }));
     return;
   }
   if (playlistMatch || segmentMatch) {

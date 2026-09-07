@@ -56,10 +56,12 @@ export default function EpisodesList({ episodes, showName, watchBase }) {
             href={`${base}/${encodeURIComponent(ep.name)}`}
           >
             <div className={`episode-card${isLast ? ' ep-last-watched' : ''}`}>
-              <span className="ep-num">{String(i + 1).padStart(2, '0')}</span>
+              <span className="ep-num">{ep.epNum ?? String(i + 1).padStart(2, '0')}</span>
               <div className="ep-play">▶</div>
               <span className="ep-name">
-                {ep.name.replace(VIDEO_EXT, '')}
+                {ep.title
+                  ? `Episode ${ep.epNum} - ${ep.title}`
+                  : ep.name.replace(VIDEO_EXT, '')}
                 {showBar && (
                   <span className="ep-progress" title={`${pct}% watched`}>
                     <span className="ep-progress-fill" style={{ width: `${pct}%` }} />

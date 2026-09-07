@@ -9,15 +9,44 @@ import EpisodesList from '../../../components/EpisodesList';
 const HDD_ROOT = '/mnt/hdd';
 const VIDEO_EXT = /\.(mp4|mkv|avi|mov|webm)$/i;
 
+// episodes.txt maps episode number -> title, one per line:
+//   01=The More Things Change (1)
+// Written by .claude/tools/episode_titles.py from TMDB.
+function readTitles(seasonPath) {
+  try {
+    const raw = fs.readFileSync(path.join(seasonPath, 'episodes.txt'), 'utf8');
+    const map = {};
+    for (const line of raw.split('\n')) {
+      const m = line.match(/^\s*(\d+)\s*=\s*(.+?)\s*$/);
+      if (m) map[String(Number(m[1])).padStart(2, '0')] = m[2];
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
 function getEpisodes(showName, season) {
   const seasonPath = path.join(HDD_ROOT, showName, season);
   if (!seasonPath.startsWith(HDD_ROOT) || !fs.existsSync(seasonPath)) return null;
+  const titles = readTitles(seasonPath);
   return fs.readdirSync(seasonPath)
     .filter(f => VIDEO_EXT.test(f))
     .sort()
     .map((f, i) => {
       const stat = fs.statSync(path.join(seasonPath, f));
-      return { name: f, size: stat.size, index: i };
+      // Number comes from the filename, not the list position — a season
+      // with gaps would otherwise mislabel every file after the first hole.
+      const m = f.match(/S\d{1,2}E(\d{1,3})/i);
+      const epNum = m ? String(Number(m[1])).padStart(2, '0')
+                      : String(i + 1).padStart(2, '0');
+      return {
+        name: f,
+        size: stat.size,
+        index: i,
+        epNum,
+        title: titles[epNum] || null,
+      };
     });
 }
 
