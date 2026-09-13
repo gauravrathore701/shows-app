@@ -206,10 +206,16 @@ a { color: inherit; text-decoration: none; }
 /* ── WATCH PAGE ── */
 .watch-page { display: flex; flex-direction: column; min-height: 100vh; background: #000; }
 .video-wrap { position: relative; width: 100%; background: #000; }
-.video-wrap video { width: 100%; display: block; max-height: 80vh; background: #000; }
-/* Vidstack player — cap height like the old native player, monochrome accent */
-.vds-player { width: 100%; max-height: 85vh; background: #000; --media-brand: #E9ECEF; --media-focus-ring-color: #ADB5BD; }
-.vds-player video { max-height: 85vh; }
+/* Native controls own the frame. The cap leaves just the breadcrumb visible
+   above the video; anything smaller wastes the screen on a 16:9 episode. */
+.video-wrap video { width: 100%; display: block; max-height: calc(100vh - 56px); background: #000; }
+.next-ep-button {
+  margin-left: auto; display: inline-flex; align-items: center; gap: .35rem;
+  padding: .3rem .7rem; border: 1px solid #343A40; border-radius: 6px;
+  background: #212529; color: #DEE2E6; font-size: .8rem; font-weight: 600;
+  cursor: pointer;
+}
+.next-ep-button:hover { background: #343A40; color: #E9ECEF; }
 .watch-info { padding: 1.2rem 2rem; background: #0d0d0d; border-top: 1px solid #222; }
 .watch-show-name {
   font-size: .75rem; color: #888; font-weight: 700;

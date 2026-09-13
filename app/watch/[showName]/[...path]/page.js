@@ -4,10 +4,6 @@ import { use, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import '@vidstack/react/player/styles/default/theme.css';
-import '@vidstack/react/player/styles/default/layouts/video.css';
-import { MediaPlayer, MediaProvider, isHLSProvider } from '@vidstack/react';
-import { defaultLayoutIcons, DefaultVideoLayout } from '@vidstack/react/player/layouts/default';
 
 import { fetchProgress, saveProgress, writeLocal } from '../../../lib/progress';
 
@@ -26,16 +22,12 @@ const NEXT_UP_SEC = 10;
 // hls.js defaults stop fetching ~30s / 60MB ahead, which shows up as "loads a
 // bit, then waits". Keep ~5 min buffered ahead instead; the byte cap must be
 // raised too or it kicks in first at these durations.
-function tuneProvider(provider) {
-  if (provider && isHLSProvider(provider)) {
-    provider.config = {
-      maxBufferLength: 300,
-      maxMaxBufferLength: 600,
-      maxBufferSize: 200 * 1000 * 1000,
-      backBufferLength: 90, // free memory behind playhead (mobile tabs); server re-serves cached segments on rewind
-    };
-  }
-}
+const HLS_CONFIG = {
+  maxBufferLength: 300,
+  maxMaxBufferLength: 600,
+  maxBufferSize: 200 * 1000 * 1000,
+  backBufferLength: 90, // free memory behind playhead (mobile tabs); server re-serves cached segments on rewind
+};
 
 export default function WatchPage({ params }) {
   const { showName, path } = use(params);
@@ -134,9 +126,12 @@ export default function WatchPage({ params }) {
 
   const nextTitle = nextEp ? nextEp.replace(/\.(mp4|mkv|avi|mov|webm)$/i, '') : '';
 
-  const src = useHls
-    ? { src: `${fileUrl}/index.m3u8`, type: 'application/x-mpegurl' }
-    : fileUrl;
+  // The progressive source needs an explicit type. Given a bare URL, vidstack
+  // picks the provider from the extension, and `.mkv` is not in its video list
+  // — so it fell through to hls.js, which fetch()ed the whole 179 MB file as if
+  // it were a manifest (twice) and then gave up with a dead player. The browser
+  // demuxes Matroska fine; only the provider hint was wrong.
+  const srcUrl = useHls ? `${fileUrl}/index.m3u8` : fileUrl;
 
   const watchKey = isSeasonal ? `${decodedShow}/${decodedSeason}` : decodedShow;
   const seasonHref = isSeasonal ? `/show/${showName}/${encodeURIComponent(decodedSeason)}` : null;
@@ -195,22 +190,21 @@ export default function WatchPage({ params }) {
     router.push(nextHref);
   }, [nextHref, push, router]);
 
-  // Persistent next-episode control, dropped into vidstack's control bar
-  // right after play/pause. Reuses goNext, so the watched-flag write and the
-  // `advanced` guard behave exactly as they do for autoplay.
+  // The browser's own controls own the bottom of the frame now, so the
+  // next-episode control sits in the page header instead of inside them.
   const nextEpButton = nextHref ? (
     <button
       type="button"
-      className="vds-button next-ep-button"
+      className="next-ep-button"
       aria-label="Next episode"
       title={nextTitle ? `Next: ${nextTitle}` : 'Next episode'}
       onClick={goNext}
     >
-      <svg className="vds-icon" viewBox="0 0 24 24" aria-hidden="true"
-           fill="currentColor" width="80%" height="80%">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor" width="18" height="18">
         <path d="M6 5.5v13l9-6.5-9-6.5z" />
         <rect x="16.5" y="5.5" width="2" height="13" rx="1" />
       </svg>
+      <span>Next</span>
     </button>
   ) : null;
 
@@ -226,23 +220,45 @@ export default function WatchPage({ params }) {
     };
   }, [push]);
 
+  // Source wiring. Native <video> plays the progressive files directly; the
+  // transcoded ones are HLS, which only Safari handles natively, so hls.js is
+  // attached for everyone else. Loaded lazily — importing it at module scope
+  // drags it into the server render for no reason.
+  useEffect(() => {
+    const v = video.current;
+    if (!v || useHls === null) return;
+
+    if (!useHls) {
+      v.src = srcUrl;
+      return () => { v.removeAttribute('src'); v.load(); };
+    }
+
+    if (v.canPlayType('application/vnd.apple.mpegurl')) {
+      v.src = srcUrl;
+      return () => { v.removeAttribute('src'); v.load(); };
+    }
+
+    let hls = null;
+    let dead = false;
+    import('hls.js').then(({ default: Hls }) => {
+      if (dead || !Hls.isSupported()) return;
+      hls = new Hls(HLS_CONFIG);
+      hls.loadSource(srcUrl);
+      hls.attachMedia(v);
+    });
+
+    return () => {
+      dead = true;
+      if (hls) hls.destroy();
+    };
+  }, [srcUrl, useHls]);
+
   function seekToResume() {
     if (resumed.current) return;
     const v = video.current;
     if (!v || !(resumeAt.current > 0)) return;
     resumed.current = true;
     v.currentTime = resumeAt.current;
-  }
-
-  // `provider.video` only exists once the provider is set up, so capture it in
-  // both callbacks and keep whichever arrives first.
-  function captureVideo(provider) {
-    video.current = provider?.video ?? video.current ?? null;
-  }
-
-  function onProviderChange(provider) {
-    tuneProvider(provider);
-    captureVideo(provider);
   }
 
   function onCanPlay() {
@@ -304,32 +320,21 @@ export default function WatchPage({ params }) {
             <span className="nav-title">{epTitle}</span>
           </>
         )}
+        {nextEpButton}
       </nav>
       <div className="video-wrap">
-        {useHls === null ? null : (
-        <MediaPlayer
-          title={epTitle}
-          src={src}
+        <video
+          ref={video}
+          className="player"
+          controls
           autoPlay
           playsInline
-          streamType="on-demand"
-          load="eager"
-          onProviderChange={onProviderChange}
-          onProviderSetup={captureVideo}
+          preload="metadata"
           onCanPlay={onCanPlay}
           onTimeUpdate={onTimeUpdate}
           onPause={() => push(false)}
           onEnded={onEnded}
-          aspectRatio="16/9"
-          className="vds-player"
-        >
-          <MediaProvider />
-          <DefaultVideoLayout
-            icons={defaultLayoutIcons}
-            slots={{ afterPlayButton: nextEpButton }}
-          />
-        </MediaPlayer>
-        )}
+        />
         {countdown !== null && nextHref && !cancelled && (
           <div className="next-up" role="dialog" aria-label="Next episode">
             <div className="next-up-label">Next episode in {countdown}s</div>

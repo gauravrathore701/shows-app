@@ -387,10 +387,23 @@ const server = http.createServer((req, res) => {
   const fileSize = stat.size;
   const rangeHeader = req.headers['range'];
 
+  const reqId = Math.random().toString(36).slice(2, 8);
   console.log(
-    `[req] ${new Date().toISOString()} ${path.basename(filePath)} ` +
-    `range=${rangeHeader || '-'} ua="${(req.headers['user-agent'] || '-').slice(0, 70)}"`
+    `[req] ${reqId} ${new Date().toISOString()} ${path.basename(filePath)} ` +
+    `range=${rangeHeader || '-'} dest=${req.headers['sec-fetch-dest'] || '-'} ` +
+    `mode=${req.headers['sec-fetch-mode'] || '-'} accept=${(req.headers['accept'] || '-').slice(0, 40)} ` +
+    `ua="${(req.headers['user-agent'] || '-').slice(0, 40)}"`
   );
+  // Temp diagnostic (2026-09-12): how much of the body actually left the box and
+  // whether the client hung up first. Remove once Omniverse playback is settled.
+  let sent = 0;
+  const onData = (c) => { sent += c.length; };
+  res.on('close', () => {
+    console.log(
+      `[end] ${reqId} sent=${sent} finished=${res.writableFinished} ` +
+      `aborted=${req.destroyed}`
+    );
+  });
 
   // Undecodable in a browser → transcode on the fly (legacy progressive path;
   // watch page uses HLS)
@@ -420,6 +433,7 @@ const server = http.createServer((req, res) => {
     });
 
     const stream = fs.createReadStream(filePath, { start, end });
+    stream.on('data', onData);
     stream.pipe(res);
     stream.on('error', () => res.destroy());
     res.on('close', () => stream.destroy());
@@ -432,10 +446,13 @@ const server = http.createServer((req, res) => {
       'Cache-Control': 'no-store',
     });
 
-    const end = Math.min(CHUNK - 1, fileSize - 1);
-    const stream = fs.createReadStream(filePath, { start: 0, end });
-    stream.pipe(res, { end: false });
-    stream.on('end', () => res.destroy());
+    // Content-Length above is the WHOLE file, so the body has to be the whole
+    // file. This used to send only the first CHUNK and destroy the socket: a
+    // short body behind Cloudflare is a 502, which killed every player whose
+    // first request carries no Range header.
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', onData);
+    stream.pipe(res);
     stream.on('error', () => res.destroy());
     res.on('close', () => stream.destroy());
   }
