@@ -190,8 +190,8 @@ export default function WatchPage({ params }) {
     router.push(nextHref);
   }, [nextHref, push, router]);
 
-  // The browser's own controls own the bottom of the frame now, so the
-  // next-episode control sits in the page header instead of inside them.
+  // The browser's own controls own the bottom of the frame, so the
+  // next-episode control sits in the info bar under the video (right side).
   const nextEpButton = nextHref ? (
     <button
       type="button"
@@ -320,7 +320,6 @@ export default function WatchPage({ params }) {
             <span className="nav-title">{epTitle}</span>
           </>
         )}
-        {nextEpButton}
       </nav>
       <div className="video-wrap">
         <video
@@ -355,6 +354,7 @@ export default function WatchPage({ params }) {
         )}
       </div>
       <div className="watch-info">
+        <div className="watch-info-main">
         <div className="watch-show-name">
           {isSeasonal ? `${decodedShow} › ${decodedSeason}` : decodedShow}
         </div>
@@ -371,6 +371,9 @@ export default function WatchPage({ params }) {
           )}
           <Link href="/" className="btn-nav">⌂ Library</Link>
         </div>
+        </div>
+        <div className="watch-doodles" data-doodle-slot aria-hidden="true" />
+        {nextEpButton}
       </div>
     </div>
   );

@@ -1,10 +1,137 @@
+/* ═══════════════════════════════════════════════════════════════════
+   THEMES
+   Every colour in this file is a variable. Two palettes are defined:
+
+   • paper    (default, :root)          — Cursed Shrine paper design, same
+                                           tokens as the blog + cursedshrine.com
+   • charcoal (html[data-theme="charcoal"]) — the original dark Shows palette,
+                                           kept exactly as it was on 2026-09-13
+
+   To switch back to charcoal: add  data-theme="charcoal"  to <html> in
+   app/layout.js and rebuild. Palette reference: .claude/themes/
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --font: ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --bg: #e8dfc9;                 /* page */
+  --text: #2b2723;               /* body text */
+  --heading: #2b2723;            /* titles, strong text */
+  --heading-span: #6b4a2f;       /* highlighted part of page titles */
+  --text-soft: #3f3830;          /* secondary text */
+  --text-dim: #6f6555;           /* meta, breadcrumbs */
+  --text-faint: #6f6555;         /* counts, placeholders */
+  --sep: #a8997a;                /* breadcrumb separator, empty state */
+
+  --surface: #ddd2b7;            /* cards, inputs, tabs */
+  --surface-hover: #d4c7a8;
+  --surface-strong: #cfc1a0;     /* play circle, badges */
+  --surface-strong-hover: #c4b594;
+
+  --line: #cbbd9e;               /* borders */
+  --line-strong: #bfae8c;
+  --line-hover: #8a6a4b;         /* hover / active borders */
+
+  --accent: #6b4a2f;             /* primary buttons, active tab, progress */
+  --accent-text: #e8dfc9;        /* text on accent */
+  --accent-hover: #563b25;
+
+  --nav-bg: rgba(232, 223, 201, .94);
+  --shadow: rgba(80, 62, 35, .18);
+  --overlay: rgba(43, 39, 35, .55);
+
+  --danger: #9b2d20;
+  --danger-bg: rgba(155, 45, 32, .08);
+  --danger-border: rgba(155, 45, 32, .45);
+
+  --player-bg: #000;             /* letterbox around the video — stays black */
+  --card-float-bg: rgba(232, 223, 201, .96);   /* next-up card over the video */
+  --card-float-line: #cbbd9e;
+  --card-float-text: #2b2723;
+  --card-float-label: #6f6555;
+
+  --season-art-1: #ddd2b7;
+  --season-art-2: #d4c7a8;
+  --season-art-3: #cfc1a0;
+  --season-num: #a8997a;
+  --season-num-hover: #6b4a2f;
+}
+
+html[data-theme="charcoal"] {
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  --bg: #0d0d0d;
+  --text: #f0f0f0;
+  --heading: #fff;
+  --heading-span: #ccc;
+  --text-soft: #ccc;
+  --text-dim: #888;
+  --text-faint: #555;
+  --sep: #444;
+
+  --surface: #111;
+  --surface-hover: #1a1a1a;
+  --surface-strong: #222;
+  --surface-strong-hover: #333;
+
+  --line: #222;
+  --line-strong: #333;
+  --line-hover: #555;
+
+  --accent: #fff;
+  --accent-text: #000;
+  --accent-hover: #ddd;
+
+  --nav-bg: rgba(13, 13, 13, .96);
+  --shadow: rgba(0, 0, 0, .6);
+  --overlay: rgba(0, 0, 0, .92);
+
+  --danger: #ff6b6b;
+  --danger-bg: rgba(255, 107, 107, .08);
+  --danger-border: rgba(255, 80, 80, .45);
+
+  --player-bg: #000;
+  --card-float-bg: rgba(33, 37, 41, .94);
+  --card-float-line: #343A40;
+  --card-float-text: #E9ECEF;
+  --card-float-label: #ADB5BD;
+
+  --season-art-1: #1c1c1c;
+  --season-art-2: #141414;
+  --season-art-3: #101010;
+  --season-num: #3a3a3a;
+  --season-num-hover: #6a6a6a;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
-  background: #0d0d0d;
-  color: #f0f0f0;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
   min-height: 100%;
+}
+
+/* Paper texture (paper theme only): edge fold creases, fibre grain, vignette.
+   Same layers as the blog, minus the middle crease. */
+/* Shows only: the two vertical creases hug the 1200px .page column (just outside its
+   left and right edges) instead of sitting at 22% / 81% of the width, so they frame the
+   library instead of cutting through the search bar and first card column.
+   That layer scrolls with the body (so it lines up with the centred column, scrollbar
+   included); the rest of the texture stays fixed. */
+html:not([data-theme="charcoal"]) body {
+  --crease-l: max(6px, calc(50% - 600px));
+  --crease-r: min(calc(100% - 10px), calc(50% + 600px));
+  background-image:
+    linear-gradient(90deg,
+      transparent 0 var(--crease-l),
+      rgba(90,70,40,.035) var(--crease-l), transparent calc(var(--crease-l) + 4px),
+      transparent var(--crease-r),
+      rgba(90,70,40,.035) var(--crease-r), transparent calc(var(--crease-r) + 4px)),
+    linear-gradient(0deg, transparent 0 63%, rgba(90,70,40,.025) 63.15%, transparent 63.4%),
+    repeating-linear-gradient(103deg, rgba(120,95,60,.028) 0 1px, transparent 1px 7px),
+    repeating-linear-gradient(11deg, rgba(120,95,60,.022) 0 1px, transparent 1px 11px),
+    radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(80,62,35,.06) 100%);
+  background-attachment: scroll, fixed, fixed, fixed, fixed;
 }
 
 a { color: inherit; text-decoration: none; }
@@ -15,8 +142,8 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   gap: 1rem;
   padding: 1rem 2rem;
-  border-bottom: 1px solid #222;
-  background: rgba(13,13,13,.96);
+  border-bottom: 1px solid var(--line);
+  background: var(--nav-bg);
   backdrop-filter: blur(8px);
   position: sticky;
   top: 0;
@@ -24,12 +151,14 @@ a { color: inherit; text-decoration: none; }
 }
 .nav-logo {
   display: inline-flex; align-items: center; gap: .55rem;
-  font-size: 1.1rem; font-weight: 800; color: #fff;
+  font-size: 1.1rem; font-weight: 800; color: var(--heading);
   text-decoration: none;
 }
 .nav-mark { height: 22px; width: auto; display: block; }
-.nav-sep { color: #444; }
-.nav-title { font-size: 1rem; color: #888; }
+/* The mark is drawn in light greys for dark backgrounds; ink it on paper. */
+html:not([data-theme="charcoal"]) .nav-mark { filter: brightness(.3) sepia(.6); }
+.nav-sep { color: var(--sep); }
+.nav-title { font-size: 1rem; color: var(--text-dim); }
 
 /* ── PAGE WRAPPER ── */
 .page { max-width: 1200px; margin: 0 auto; padding: 2rem; }
@@ -39,52 +168,52 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   align-items: center;
   gap: .6rem;
-  background: #111;
-  border: 1px solid #2a2a2a;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: .55rem 1rem;
   margin-bottom: 1.1rem;
   transition: border-color .2s;
 }
-.search-bar:focus-within { border-color: #666; }
+.search-bar:focus-within { border-color: var(--line-hover); }
 .search-icon { font-size: .9rem; opacity: .6; flex-shrink: 0; }
 .search-input {
   flex: 1;
   background: none;
   border: none;
   outline: none;
-  color: #f0f0f0;
+  color: var(--text);
   font-size: .9rem;
   font-family: inherit;
   min-width: 0;
 }
-.search-input::placeholder { color: #555; }
+.search-input::placeholder { color: var(--text-faint); }
 .search-input::-webkit-search-cancel-button { display: none; }
 .search-clear {
   background: none;
   border: none;
-  color: #777;
+  color: var(--text-dim);
   cursor: pointer;
   font-size: .85rem;
   padding: 0 .2rem;
   transition: color .2s;
 }
-.search-clear:hover { color: #fff; }
-.search-count { font-size: .78rem; color: #666; margin-bottom: 1rem; }
+.search-clear:hover { color: var(--heading); }
+.search-count { font-size: .78rem; color: var(--text-faint); margin-bottom: 1rem; }
 
 /* ── TAG CHIPS ── */
 .show-tags { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .1rem; }
 .show-tag {
   font-size: .65rem;
   font-weight: 600;
-  color: #777;
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
+  color: var(--text-dim);
+  background: var(--surface-hover);
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: .15rem .5rem;
   transition: all .2s;
 }
-.show-tag:hover { color: #fff; border-color: #666; background: #222; }
+.show-tag:hover { color: var(--heading); border-color: var(--line-hover); background: var(--surface-strong); }
 
 /* ── TABS ── */
 .tabs {
@@ -101,24 +230,24 @@ a { color: inherit; text-decoration: none; }
   border-radius: 999px;
   font-size: .82rem;
   font-weight: 700;
-  border: 1px solid #2a2a2a;
-  background: #111;
-  color: #777;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-dim);
   transition: all .2s;
   font-family: inherit;
   cursor: pointer;
 }
-.tab:hover { background: #1a1a1a; border-color: #444; color: #ccc; }
-.tab-active { background: #1a1a1a; border-color: #666; color: #fff; }
+.tab:hover { background: var(--surface-hover); border-color: var(--line-hover); color: var(--text-soft); }
+.tab-active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 
 /* ── SHOWS GRID ── */
 .page-heading {
   font-size: 1.8rem;
   font-weight: 800;
   margin-bottom: 1.5rem;
-  color: #fff;
+  color: var(--heading);
 }
-.page-heading span { color: #ccc; }
+.page-heading span { color: var(--heading-span); }
 
 .shows-grid {
   display: grid;
@@ -127,8 +256,8 @@ a { color: inherit; text-decoration: none; }
 }
 
 .show-card {
-  background: #111;
-  border: 1px solid #222;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 14px;
   padding: 1.5rem 1.2rem;
   cursor: pointer;
@@ -138,16 +267,16 @@ a { color: inherit; text-decoration: none; }
   gap: .6rem;
 }
 .show-card:hover {
-  background: #1a1a1a;
-  border-color: #555;
+  background: var(--surface-hover);
+  border-color: var(--line-hover);
   transform: translateY(-3px);
-  box-shadow: 0 8px 24px rgba(0,0,0,.6);
+  box-shadow: 0 8px 24px var(--shadow);
 }
 .show-thumb {
   position: relative;
   width: 100%;
   aspect-ratio: 2/3;
-  background: #1a1a1a;
+  background: var(--surface-strong);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -156,20 +285,20 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: .4rem;
   overflow: hidden;
 }
-.show-name { font-size: .95rem; font-weight: 700; color: #f0f0f0; line-height: 1.3; }
-.show-meta { font-size: .75rem; color: #555; }
+.show-name { font-size: .95rem; font-weight: 700; color: var(--heading); line-height: 1.3; }
+.show-meta { font-size: .75rem; color: var(--text-faint); }
 
 /* ── EPISODES LIST ── */
 .back-link {
   display: inline-flex;
   align-items: center;
   gap: .4rem;
-  color: #888;
+  color: var(--text-dim);
   font-size: .85rem;
   margin-bottom: 1.5rem;
   transition: color .2s;
 }
-.back-link:hover { color: #fff; }
+.back-link:hover { color: var(--heading); }
 
 .episodes-list { display: flex; flex-direction: column; gap: .7rem; }
 
@@ -178,134 +307,144 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   gap: 1rem;
   padding: 1rem 1.2rem;
-  background: #111;
-  border: 1px solid #222;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 10px;
   cursor: pointer;
   transition: all .2s ease;
 }
-.episode-card:hover { background: #1a1a1a; border-color: #444; transform: translateX(4px); }
-.ep-num { font-size: .75rem; color: #666; font-weight: 800; min-width: 2rem; text-align: center; }
+.episode-card:hover { background: var(--surface-hover); border-color: var(--line-hover); transform: translateX(4px); }
+.ep-num { font-size: .75rem; color: var(--text-faint); font-weight: 800; min-width: 2rem; text-align: center; }
 .ep-play {
   width: 36px; height: 36px; border-radius: 50%;
-  background: #222;
+  background: var(--surface-strong);
   display: flex; align-items: center; justify-content: center;
   font-size: .9rem; flex-shrink: 0; transition: background .2s;
 }
-.episode-card:hover .ep-play { background: #333; }
-.ep-name { flex: 1; font-size: .9rem; font-weight: 600; color: #f0f0f0; }
-.ep-size { font-size: .75rem; color: #555; white-space: nowrap; }
-.ep-last-watched { border-color: #555; }
+.episode-card:hover .ep-play { background: var(--surface-strong-hover); }
+.ep-name { flex: 1; font-size: .9rem; font-weight: 600; color: var(--heading); }
+.ep-size { font-size: .75rem; color: var(--text-faint); white-space: nowrap; }
+.ep-last-watched { border-color: var(--line-hover); }
 .ep-last-badge {
-  font-size: .68rem; font-weight: 700; color: #fff;
-  background: #333; border: 1px solid #555;
+  font-size: .68rem; font-weight: 700; color: var(--accent-text);
+  background: var(--accent); border: 1px solid var(--accent);
   padding: .2rem .55rem; border-radius: 999px;
   white-space: nowrap;
 }
 
 /* ── WATCH PAGE ── */
-.watch-page { display: flex; flex-direction: column; min-height: 100vh; background: #000; }
-.video-wrap { position: relative; width: 100%; background: #000; }
+.watch-page { display: flex; flex-direction: column; min-height: 100vh; }
+.video-wrap { position: relative; width: 100%; background: var(--player-bg); }
 /* Native controls own the frame. The cap leaves just the breadcrumb visible
    above the video; anything smaller wastes the screen on a 16:9 episode. */
-.video-wrap video { width: 100%; display: block; max-height: calc(100vh - 56px); background: #000; }
+.video-wrap video { width: 100%; display: block; max-height: calc(100vh - 56px); background: var(--player-bg); }
 .next-ep-button {
-  margin-left: auto; display: inline-flex; align-items: center; gap: .35rem;
-  padding: .3rem .7rem; border: 1px solid #343A40; border-radius: 6px;
-  background: #212529; color: #DEE2E6; font-size: .8rem; font-weight: 600;
-  cursor: pointer;
+  display: inline-flex; align-items: center; gap: .45rem; flex-shrink: 0;
+  padding: .6rem 1.2rem; border: 1px solid var(--accent); border-radius: 8px;
+  background: var(--accent); color: var(--accent-text); font-size: .9rem; font-weight: 700;
+  cursor: pointer; transition: all .2s;
 }
-.next-ep-button:hover { background: #343A40; color: #E9ECEF; }
-.watch-info { padding: 1.2rem 2rem; background: #0d0d0d; border-top: 1px solid #222; }
+.next-ep-button:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); }
+/* Info bar: title + nav on the left, Next episode on the right. */
+.watch-info {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 1.2rem 2rem; background: var(--bg); border-top: 1px solid var(--line);
+}
+.watch-info-main { min-width: 0; }
+/* Doodle strip between the episode info and Next (filled by cursedshrine.com/doodles.js). */
+.watch-doodles { flex: 1; align-self: stretch; min-height: 84px; }
+html[data-theme="charcoal"] .watch-doodles { display: none; }
 .watch-show-name {
-  font-size: .75rem; color: #888; font-weight: 700;
+  font-size: .75rem; color: var(--text-dim); font-weight: 700;
   text-transform: uppercase; letter-spacing: .08em; margin-bottom: .3rem;
 }
-.watch-ep-name { font-size: 1.2rem; font-weight: 800; color: #fff; margin-bottom: .8rem; }
+.watch-ep-name { font-size: 1.2rem; font-weight: 800; color: var(--heading); margin-bottom: .8rem; }
 .watch-nav { display: flex; gap: .8rem; }
 .btn-nav {
   display: inline-flex; align-items: center; gap: .4rem;
   padding: .5rem 1rem; border-radius: 8px; font-size: .8rem; font-weight: 700;
   cursor: pointer; transition: all .2s;
-  border: 1px solid #333; background: #1a1a1a; color: #ccc; text-decoration: none;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--text-soft); text-decoration: none;
 }
-.btn-nav:hover { background: #2a2a2a; border-color: #666; color: #fff; }
+.btn-nav:hover { background: var(--surface-hover); border-color: var(--line-hover); color: var(--heading); }
 
 /* ── EMPTY STATE ── */
-.empty { text-align: center; padding: 4rem 2rem; color: #444; }
+.empty { text-align: center; padding: 4rem 2rem; color: var(--sep); }
 .empty-icon { font-size: 3rem; margin-bottom: 1rem; }
 .empty-text { font-size: .95rem; }
 
 /* ── AUTH MODAL ── */
 .modal-overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,.92);
+  background: var(--overlay);
   backdrop-filter: blur(12px);
   display: flex; align-items: center; justify-content: center;
   z-index: 1000;
 }
 .modal-card {
-  background: #111;
-  border: 1px solid #2a2a2a;
+  background: var(--bg);
+  border: 1px solid var(--line);
   border-radius: 20px;
   padding: 2.5rem 2rem;
   width: 100%; max-width: 380px;
   display: flex; flex-direction: column; align-items: center; gap: 1rem;
-  box-shadow: 0 0 40px rgba(0,0,0,.8);
+  box-shadow: 0 10px 40px var(--shadow);
 }
-.modal-logo { font-size: 1.4rem; font-weight: 800; color: #fff; }
-.modal-subtitle { font-size: .85rem; color: #555; margin-top: -.3rem; }
+.modal-logo { font-size: 1.4rem; font-weight: 800; color: var(--heading); }
+.modal-subtitle { font-size: .85rem; color: var(--text-dim); margin-top: -.3rem; }
 .modal-form { display: flex; flex-direction: column; gap: .75rem; width: 100%; margin-top: .5rem; }
 .modal-input {
   width: 100%; padding: .75rem 1rem;
-  background: #1a1a1a; border: 1px solid #333;
-  border-radius: 10px; color: #f0f0f0; font-size: .95rem;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: 10px; color: var(--text); font-size: .95rem;
   outline: none; transition: border-color .2s;
 }
-.modal-input::placeholder { color: #555; }
-.modal-input:focus { border-color: #888; }
+.modal-input::placeholder { color: var(--text-faint); }
+.modal-input:focus { border-color: var(--line-hover); }
 .modal-error {
-  font-size: .82rem; color: #ff6b6b; text-align: center;
-  padding: .3rem .5rem; background: rgba(255,107,107,.08); border-radius: 6px;
+  font-size: .82rem; color: var(--danger); text-align: center;
+  padding: .3rem .5rem; background: var(--danger-bg); border-radius: 6px;
 }
 .modal-btn {
   width: 100%; padding: .8rem;
-  background: #fff; border: none; border-radius: 10px;
-  color: #000; font-size: 1rem; font-weight: 700;
+  background: var(--accent); border: none; border-radius: 10px;
+  color: var(--accent-text); font-size: 1rem; font-weight: 700;
   cursor: pointer; transition: opacity .2s; margin-top: .25rem;
 }
 .modal-btn:hover { opacity: .85; }
 .modal-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ── DEV CREDIT ── */
-.dev-credit {
-  position: fixed;
-  bottom: 1rem;
-  right: 1.5rem;
-  font-size: .7rem;
-  color: #444;
-  z-index: 50;
-  pointer-events: none;
+/* ── SITE FOOTER (shared Cursed Shrine credit) ── */
+.site-footer { margin-top: 2.5rem; border-top: 1px solid var(--line); }
+.site-footer-inner {
+  max-width: 1200px; margin: 0 auto; padding: 1.2rem 2rem 1.4rem;
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem;
+  font-size: .85rem; color: var(--text-dim);
 }
-.dev-credit a {
-  color: #666;
-  pointer-events: all;
-  transition: color .2s;
+.site-footer-links { display: flex; gap: 1.25rem; }
+.site-footer-links a:hover { color: var(--accent); }
+.site-footer .credit { flex-basis: 100%; text-align: right; font-size: .8rem; }
+.site-footer .credit a { color: var(--accent); font-weight: 600; }
+.site-footer .credit a:hover { text-decoration: underline; }
+.site-footer .assist {
+  flex-basis: 100%; margin-top: -.4rem; text-align: right;
+  font-size: .7rem; font-style: italic; color: var(--text-dim); opacity: .85;
 }
-.dev-credit a:hover { color: #aaa; }
+html[data-theme="charcoal"] .site-footer .credit a { color: #aaa; }
 
 /* ── LOGOUT BUTTON ── */
 .logout-btn {
-  /* Top right. Sits above the page nav, which is static, so a fixed button
-     here does not cover any control — the nav's own links start at the left. */
-  position: fixed; top: 1rem; right: 1.5rem;
-  width: 42px; height: 42px; border-radius: 50%;
-  background: #111; border: 1px solid #333; color: #555;
-  font-size: 1.1rem; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
+  /* Top right of the page, inside the nav row. Absolute (not fixed) so it
+     scrolls away with the nav instead of floating over the video, and the nav
+     reserves room on the right so breadcrumbs never run underneath it. */
+  position: absolute; top: .8rem; right: 1.5rem;
+  padding: .35rem .9rem; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--line-strong); color: var(--text-soft);
+  font-size: .8rem; font-weight: 700; letter-spacing: .02em; cursor: pointer;
   transition: all .2s; z-index: 100;
 }
-.logout-btn:hover { background: rgba(255,80,80,.1); border-color: rgba(255,80,80,.4); color: #ff6b6b; }
+.logout-btn:hover { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger); }
+.nav { padding-right: 7.5rem; }
 
 /* ── EPISODE PROGRESS (server-side watch position) ── */
 .ep-progress {
@@ -314,12 +453,12 @@ a { color: inherit; text-decoration: none; }
   height: 3px;
   width: 100%;
   max-width: 260px;
-  background: #2a2a2a;
+  background: var(--line);
   border-radius: 999px;
   overflow: hidden;
 }
-.ep-progress-fill { display: block; height: 100%; background: #ADB5BD; }
-.ep-done { font-size: .8rem; color: #6C757D; font-weight: 800; flex-shrink: 0; }
+.ep-progress-fill { display: block; height: 100%; background: var(--accent); }
+.ep-done { font-size: .8rem; color: var(--text-dim); font-weight: 800; flex-shrink: 0; }
 
 /* Next-episode card — appears over the player for the last 10 seconds.
    Bottom-right so it clears vidstack's centre controls; the player's own
@@ -331,8 +470,8 @@ a { color: inherit; text-decoration: none; }
   z-index: 50;
   width: min(22rem, calc(100% - 3rem));
   padding: 1rem 1.1rem;
-  background: rgba(33, 37, 41, .94);
-  border: 1px solid #343A40;
+  background: var(--card-float-bg);
+  border: 1px solid var(--card-float-line);
   border-radius: 10px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .55);
   backdrop-filter: blur(6px);
@@ -344,10 +483,10 @@ a { color: inherit; text-decoration: none; }
 }
 .next-up-label {
   font-size: .72rem; font-weight: 700; letter-spacing: .08em;
-  text-transform: uppercase; color: #ADB5BD; margin-bottom: .35rem;
+  text-transform: uppercase; color: var(--card-float-label); margin-bottom: .35rem;
 }
 .next-up-title {
-  font-size: .95rem; color: #E9ECEF; font-weight: 600;
+  font-size: .95rem; color: var(--card-float-text); font-weight: 600;
   margin-bottom: .8rem; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden;
@@ -356,14 +495,16 @@ a { color: inherit; text-decoration: none; }
 .next-up-play, .next-up-cancel {
   font: inherit; font-size: .85rem; font-weight: 600;
   padding: .5rem .9rem; border-radius: 6px; cursor: pointer;
-  border: 1px solid #343A40; transition: background .15s, border-color .15s;
+  border: 1px solid var(--card-float-line); transition: background .15s, border-color .15s;
 }
-.next-up-play { background: #E9ECEF; color: #212529; border-color: #E9ECEF; }
-.next-up-play:hover { background: #CED4DA; border-color: #CED4DA; }
-.next-up-cancel { background: transparent; color: #CED4DA; }
-.next-up-cancel:hover { background: #343A40; color: #E9ECEF; }
+.next-up-play { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.next-up-play:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.next-up-cancel { background: transparent; color: var(--card-float-text); }
+.next-up-cancel:hover { background: var(--card-float-line); color: var(--card-float-text); }
 
 @media (max-width: 640px) {
+  .watch-info { flex-wrap: wrap; padding: 1rem; }
+  .watch-doodles { display: none; }
   .next-up { right: .75rem; left: .75rem; bottom: 4.5rem; width: auto; padding: .8rem .9rem; }
   .next-up-title { margin-bottom: .6rem; }
 }
@@ -371,7 +512,7 @@ a { color: inherit; text-decoration: none; }
 /* Next-episode button in the vidstack control bar (slot: afterPlayButton).
    Sizing comes from .vds-button; only the icon colour is ours. */
 .next-ep-button .vds-icon { width: 80%; height: 80%; }
-.next-ep-button:hover { color: var(--accent, #CED4DA); }
+.next-ep-button:hover { color: var(--accent-text); }
 
 /* ── Season cards ──────────────────────────────────────
    Seasons are not posters. The old .show-card gave them a
@@ -385,8 +526,8 @@ a { color: inherit; text-decoration: none; }
 }
 
 .season-card {
-  background: #111;
-  border: 1px solid #222;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
@@ -395,9 +536,9 @@ a { color: inherit; text-decoration: none; }
               box-shadow .2s ease;
 }
 .season-card:hover {
-  border-color: #555;
+  border-color: var(--line-hover);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,.55);
+  box-shadow: 0 8px 24px var(--shadow);
 }
 
 .season-art {
@@ -409,8 +550,8 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   justify-content: center;
   background:
-    linear-gradient(135deg, #1c1c1c 0%, #141414 55%, #101010 100%);
-  border-bottom: 1px solid #222;
+    linear-gradient(135deg, var(--season-art-1) 0%, var(--season-art-2) 55%, var(--season-art-3) 100%);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Big outlined numeral, sits behind the label. */
@@ -420,12 +561,12 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: .04em;
   line-height: 1;
   color: transparent;
-  -webkit-text-stroke: 1.5px #3a3a3a;
+  -webkit-text-stroke: 1.5px var(--season-num);
   user-select: none;
   transition: -webkit-text-stroke-color .2s ease;
 }
 .season-card:hover .season-num {
-  -webkit-text-stroke-color: #6a6a6a;
+  -webkit-text-stroke-color: var(--season-num-hover);
 }
 
 .season-body {
@@ -437,10 +578,10 @@ a { color: inherit; text-decoration: none; }
 .season-name {
   font-size: .92rem;
   font-weight: 700;
-  color: #f0f0f0;
+  color: var(--heading);
   line-height: 1.25;
 }
-.season-meta { font-size: .72rem; color: #777; }
+.season-meta { font-size: .72rem; color: var(--text-dim); }
 
 @media (max-width: 640px) {
   .season-grid {

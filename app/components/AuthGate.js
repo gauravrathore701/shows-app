@@ -81,8 +81,8 @@ export default function AuthGate({ children }) {
   return (
     <>
       {authed && (
-        <button className="logout-btn" onClick={handleLogout} title="Logout">
-          ⏻
+        <button type="button" className="logout-btn" onClick={handleLogout}>
+          Logout
         </button>
       )}
       {authed ? children : (
