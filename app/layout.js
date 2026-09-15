@@ -22,7 +22,7 @@ export default function RootLayout({ children }) {
         <AuthGate>{children}</AuthGate>
         <footer className="site-footer">
           <div className="site-footer-inner">
-            <span>© {new Date().getFullYear()} Cursed Shrine · built on a Raspberry Pi</span>
+            <span>© {new Date().getFullYear()} Cursed Shrine</span>
             <span className="site-footer-links">
               <a href="https://cursedshrine.com">Home</a>
               <a href="https://gaurav.cursedshrine.com">Portfolio</a>

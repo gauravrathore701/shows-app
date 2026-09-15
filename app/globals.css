@@ -431,6 +431,12 @@ html[data-theme="charcoal"] .watch-doodles { display: none; }
   font-size: .7rem; font-style: italic; color: var(--text-dim); opacity: .85;
 }
 html[data-theme="charcoal"] .site-footer .credit a { color: #aaa; }
+/* Watch page: footer spans the full width so its edges line up with the
+   episode title (left) and the Next button (right) in .watch-info. */
+body:has(.watch-page) .site-footer-inner { max-width: none; padding-left: 2rem; padding-right: 2rem; }
+@media (max-width: 640px) {
+  body:has(.watch-page) .site-footer-inner { padding-left: 1rem; padding-right: 1rem; }
+}
 
 /* ── LOGOUT BUTTON ── */
 .logout-btn {
