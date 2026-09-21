@@ -6,6 +6,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import EpisodesList from '../../components/EpisodesList';
+import MediaTabs from '../../components/MediaTabs';
+import { listChapters, MANGA_DIR } from '../../lib/manga-server';
 
 const HDD_ROOT = '/mnt/hdd';
 const VIDEO_EXT = /\.(mp4|mkv|avi|mov|webm)$/i;
@@ -72,7 +74,10 @@ function getShowData(showName) {
   }
 
   const seasons = entries
-    .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+    // Manga/ holds .cbz, never video — it is surfaced by the Manga tab, not as
+    // a season. It would be dropped anyway for having no video files, but the
+    // name is excluded up front so the intent is clear.
+    .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== MANGA_DIR)
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(e => {
       const seasonPath = path.join(showPath, e.name);
@@ -98,6 +103,10 @@ export default async function ShowPage({ params }) {
   const decoded = decodeURIComponent(showName);
   const data = getShowData(decoded);
   if (!data) notFound();
+
+  // A show with a Manga/ folder gets the Episodes / Manga toggle. Everything
+  // else renders exactly as before.
+  const chapters = listChapters(decoded);
 
   return (
     <>
@@ -154,6 +163,8 @@ export default async function ShowPage({ params }) {
               })}
             </div>
           )
+        ) : chapters.length > 0 ? (
+          <MediaTabs episodes={data.episodes} chapters={chapters} showName={decoded} />
         ) : (
           data.episodes.length === 0 ? (
             <div className="empty">

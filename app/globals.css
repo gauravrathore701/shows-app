@@ -596,3 +596,65 @@ body:has(.watch-page) .site-footer-inner { max-width: none; padding-left: 2rem; 
   }
   .season-body { padding: .6rem .7rem .7rem; }
 }
+
+/* ── MANGA: CHAPTER LIST ── */
+/* Chapter rows reuse .episodes-list / .episode-card so the two surfaces of a
+   show look identical. Only the toolbar and the reader are new. */
+.chapter-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .8rem; margin: 0 0 1rem;
+}
+.chapter-count { font-size: .78rem; color: var(--text-faint); font-weight: 700; }
+.chapter-sort {
+  font: inherit; font-size: .78rem; font-weight: 700;
+  color: var(--text-soft); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: .35rem .8rem; cursor: pointer; transition: all .2s;
+}
+.chapter-sort:hover { background: var(--surface-hover); border-color: var(--line-hover); }
+.tab-count { font-size: .7rem; opacity: .75; margin-left: .3rem; }
+
+/* ── MANGA: READER ── */
+.reader { display: flex; flex-direction: column; min-height: 100vh; background: var(--bg); }
+.reader-nav { position: sticky; top: 0; z-index: 20; }
+.reader-resume {
+  align-self: center; margin: .9rem 0 0;
+  font: inherit; font-size: .8rem; font-weight: 700;
+  color: var(--accent-text); background: var(--accent);
+  border: 1px solid var(--accent); border-radius: 999px;
+  padding: .5rem 1.1rem; cursor: pointer;
+}
+.reader-resume:hover { background: var(--accent-hover); }
+
+/* One column, full bleed. Pages are 1100-1500 px wide scans, so the cap keeps
+   them from stretching on a desktop while the phone still gets edge to edge. */
+.reader-pages {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px; padding: .6rem 0 0;
+}
+.reader-page {
+  display: block; width: 100%; max-width: 900px; height: auto;
+  background: var(--surface);
+}
+
+.reader-end {
+  display: flex; align-items: center; justify-content: center; gap: .6rem;
+  padding: 1.4rem 1rem 3.2rem; flex-wrap: wrap;
+}
+.reader-btn {
+  font-size: .82rem; font-weight: 700; color: var(--text-soft);
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 999px; padding: .55rem 1.1rem; white-space: nowrap;
+}
+.reader-btn:hover { background: var(--surface-hover); border-color: var(--line-hover); }
+.reader-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.reader-btn-primary:hover { background: var(--accent-hover); }
+.reader-btn-off { opacity: .4; pointer-events: none; }
+
+.reader-counter {
+  position: fixed; bottom: .9rem; left: 50%; transform: translateX(-50%);
+  z-index: 25; font-size: .74rem; font-weight: 800;
+  color: var(--accent-text); background: var(--overlay);
+  border-radius: 999px; padding: .32rem .8rem;
+  pointer-events: none;
+}

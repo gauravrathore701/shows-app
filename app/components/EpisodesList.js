@@ -6,6 +6,25 @@ import Link from 'next/link';
 import { fetchProgress, readLocal } from '../lib/progress';
 
 const VIDEO_EXT = /\.(mp4|mkv|avi|mov|webm)$/i;
+const SORT_KEY = 'epSort';
+
+// Sort choice is remembered per list key (show, or show/season) so a long
+// running anime can sit newest-first while a 8-episode season stays in order.
+function readSort(key) {
+  try {
+    return JSON.parse(localStorage.getItem(SORT_KEY) || '{}')[key] || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSort(key, value) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SORT_KEY) || '{}');
+    stored[key] = value;
+    localStorage.setItem(SORT_KEY, JSON.stringify(stored));
+  } catch {}
+}
 
 function formatSize(bytes) {
   if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
@@ -17,9 +36,23 @@ export default function EpisodesList({ episodes, showName, watchBase }) {
   const [lastWatched, setLastWatched] = useState(null);
   // path -> { position, duration, finished }
   const [progress, setProgress] = useState({});
+  const [newestFirst, setNewestFirst] = useState(false);
 
   // For flat shows watchBase is not passed — default to /watch/<showName>
   const base = watchBase ?? `/watch/${encodeURIComponent(showName)}`;
+  // watchBase is per-season, so it keys the season lists apart
+  const sortKey = watchBase ?? showName;
+
+  useEffect(() => {
+    setNewestFirst(readSort(sortKey) === 'newest');
+  }, [sortKey]);
+
+  function flipSort() {
+    setNewestFirst(v => {
+      writeSort(sortKey, v ? 'oldest' : 'newest');
+      return !v;
+    });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -41,9 +74,23 @@ export default function EpisodesList({ episodes, showName, watchBase }) {
     return () => { cancelled = true; };
   }, [showName]);
 
+  // The fallback episode number is the position in broadcast order, so it is
+  // frozen before the list is flipped — otherwise reversing would renumber it.
+  const numbered = episodes.map((ep, i) => ({ ...ep, fallbackNum: String(i + 1).padStart(2, '0') }));
+  const ordered = newestFirst ? [...numbered].reverse() : numbered;
+
   return (
+    <>
+    <div className="chapter-toolbar">
+      <span className="chapter-count">
+        {episodes.length} {episodes.length === 1 ? 'episode' : 'episodes'}
+      </span>
+      <button className="chapter-sort" onClick={flipSort}>
+        {newestFirst ? 'Newest first ↓' : 'Oldest first ↑'}
+      </button>
+    </div>
     <div className="episodes-list">
-      {episodes.map((ep, i) => {
+      {ordered.map((ep) => {
         const isLast = lastWatched === ep.name;
         const p = progress[ep.name];
         const pct = p && p.duration > 0
@@ -56,7 +103,7 @@ export default function EpisodesList({ episodes, showName, watchBase }) {
             href={`${base}/${encodeURIComponent(ep.name)}`}
           >
             <div className={`episode-card${isLast ? ' ep-last-watched' : ''}`}>
-              <span className="ep-num">{ep.epNum ?? String(i + 1).padStart(2, '0')}</span>
+              <span className="ep-num">{ep.epNum ?? ep.fallbackNum}</span>
               <div className="ep-play">▶</div>
               <span className="ep-name">
                 {ep.title
@@ -76,5 +123,6 @@ export default function EpisodesList({ episodes, showName, watchBase }) {
         );
       })}
     </div>
+    </>
   );
 }
