@@ -18,6 +18,9 @@ const RESUME_MAX_RATIO = 0.95;
 // Netflix-style next-episode card: appears this many seconds before the end and
 // counts down to an automatic jump.
 const NEXT_UP_SEC = 10;
+// Skip-intro offer: how long the button stays on screen before the intro is
+// skipped without being asked twice.
+const SKIP_INTRO_GRACE_SEC = 3;
 
 // hls.js defaults stop fetching ~30s / 60MB ahead, which shows up as "loads a
 // bit, then waits". Keep ~5 min buffered ahead instead; the byte cap must be
@@ -85,6 +88,13 @@ export default function WatchPage({ params }) {
   // sibling list comes from the API. Movies have no siblings worth fetching.
   const [nextEp, setNextEp] = useState(null);
   const [countdown, setCountdown] = useState(null);   // null = card hidden
+  // ── Skip intro ──────────────────────────────────────────────────────────
+  // { start, end } in seconds, from the season's (or show's) metadata.txt.
+  const [intro, setIntro] = useState(null);
+  const [skipLeft, setSkipLeft] = useState(null);     // null = button hidden
+  // One offer per episode: once the intro has been skipped, or watched past,
+  // rewinding into it does not pop the button up again.
+  const introDone = useRef(false);
   const [cancelled, setCancelled] = useState(false);
   const router = useRouter();
   const advanced = useRef(false);
@@ -94,6 +104,9 @@ export default function WatchPage({ params }) {
     setEpName(null);   // otherwise the previous episode's title lingers
     setCountdown(null);
     setCancelled(false);
+    setIntro(null);
+    setSkipLeft(null);
+    introDone.current = false;
     advanced.current = false;
     if (isMovie) return;
 
@@ -106,6 +119,7 @@ export default function WatchPage({ params }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (stale || !d?.episodes?.length) return;
+        if (d.intro && d.intro.end > d.intro.start) setIntro(d.intro);
         // Same response carries the title map — no second request.
         const t = epNum && d.titles ? d.titles[epNum] : null;
         if (t) setEpName(`Episode ${epNum} - ${t}`);
@@ -180,6 +194,31 @@ export default function WatchPage({ params }) {
     lastSent.current = position;
     saveProgress({ show: watchKey, path: decodedEp, position, duration, finished });
   }, [watchKey, decodedEp]);
+
+  // Jump the playhead past the opening titles. Called by the button and by the
+  // timer below when the offer runs out unanswered.
+  const applySkip = useCallback(() => {
+    introDone.current = true;
+    setSkipLeft(null);
+    const v = video.current;
+    if (!v || !intro) return;
+    // Only move if the playhead is still inside the titles — the viewer may
+    // have scrubbed out of them while the button was up.
+    if (v.currentTime < intro.end) v.currentTime = intro.end;
+  }, [intro]);
+
+  // The offer counts down once a second; reaching zero skips the intro. The
+  // state is the countdown itself, so a re-render cannot lose the timer and
+  // leave the button stuck on screen.
+  useEffect(() => {
+    if (skipLeft === null) return undefined;
+    if (skipLeft > 0) {
+      const t = setTimeout(() => setSkipLeft((n) => (n === null ? null : n - 1)), 1000);
+      return () => clearTimeout(t);
+    }
+    applySkip();
+    return undefined;
+  }, [skipLeft, applySkip]);
 
   // Declared after `push` so it can depend on it. Marks the episode finished
   // before navigating, otherwise the list still shows it as in-progress.
@@ -270,6 +309,21 @@ export default function WatchPage({ params }) {
     const v = video.current;
     if (!v) return;
 
+    // Skip-intro offer, driven by the playhead like the next-up card. Nothing
+    // here runs for a show whose metadata.txt carries no intro window.
+    if (intro && !introDone.current) {
+      const t = v.currentTime;
+      if (t >= intro.end) {
+        introDone.current = true;
+        setSkipLeft(null);
+      } else if (t >= intro.start) {
+        if (skipLeft === null) setSkipLeft(SKIP_INTRO_GRACE_SEC);
+      } else if (skipLeft !== null) {
+        // scrubbed back out before the titles — withdraw the offer
+        setSkipLeft(null);
+      }
+    }
+
     // The card is driven by the playhead, not a timer, so scrubbing backwards
     // hides it again and scrubbing forwards brings it straight back.
     if (nextHref && !cancelled && v.currentTime > 0 &&
@@ -351,6 +405,17 @@ export default function WatchPage({ params }) {
               </button>
             </div>
           </div>
+        )}
+        {skipLeft !== null && (
+          <button
+            type="button"
+            className="skip-intro"
+            onClick={applySkip}
+            aria-label="Skip intro"
+          >
+            Skip Intro
+            <span className="skip-intro-count">{Math.max(skipLeft, 1)}</span>
+          </button>
         )}
       </div>
       <div className="watch-info">

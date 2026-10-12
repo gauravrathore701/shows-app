@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import { readIntro } from '../../../lib/intro-server';
+
 const HDD_ROOT = '/mnt/hdd';
 const VIDEO_EXT = /\.(mp4|mkv|avi|mov|webm)$/i;
 
@@ -48,8 +50,14 @@ export async function GET(request, { params }) {
   // Titles ride along so the watch page — a client component that cannot
   // touch the filesystem — can label the episode it is already playing.
   const titles = readTitles(dir);
+  // The opening-titles window rides along too. The watch page cannot read
+  // metadata.txt itself, and it already makes this request for the sibling
+  // list, so the skip-intro button costs no extra round trip. Season folder
+  // first so a season can override the show-wide value.
+  const showDir = path.resolve(HDD_ROOT, segments[0]);
+  const intro = readIntro(dir, showDir);
   return Response.json(
-    { episodes, titles },
+    { episodes, titles, intro },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }
