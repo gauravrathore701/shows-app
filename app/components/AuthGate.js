@@ -39,6 +39,8 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // Wake the HDD while the user is still on login/home, not after they pick a show
+    fetch('/api/wake', { method: 'POST' }).catch(() => {});
     setAuthed(!!loadAuth());
     setChecked(true);
   }, []);
