@@ -331,6 +331,11 @@ html:not([data-theme="charcoal"]) .nav-mark { filter: brightness(.3) sepia(.6); 
   padding: .2rem .55rem; border-radius: 999px;
   white-space: nowrap;
 }
+/* Phones: no room in the row, so the badge sits on the card's top border. */
+@media (max-width: 640px) {
+  .ep-last-watched { position: relative; }
+  .ep-last-badge { position: absolute; top: -.7rem; right: .8rem; }
+}
 
 /* ── WATCH PAGE ── */
 .watch-page { display: flex; flex-direction: column; min-height: 100vh; }
