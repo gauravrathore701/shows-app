@@ -138,7 +138,7 @@ function serveHlsSegment(filePath, index, res) {
     '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
     '-pix_fmt', 'yuv420p',
     '-vf', 'scale=-2:720',
-    '-force_key_frames', 'expr:gte(t,0)', // keyframe at segment start → independently decodable
+    '-force_key_frames', 'expr:eq(n,0)', // first frame only; gte(t,0) made EVERY frame a keyframe (~6x bitrate)
     '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
     '-output_ts_offset', start.toFixed(3), // align PTS to playlist position → contiguous timeline
     '-muxdelay', '0', '-muxpreload', '0',
