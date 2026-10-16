@@ -4,6 +4,8 @@
 # Original moved to /mnt/hdd/.hevc-originals/<same path> (dot dir = hidden
 # from the library). Skips files already H.264 8-bit.
 # Usage: convert_h264.sh FILE...   (processed in the order given)
+# Run capped, or live HLS starves (nice does not cross systemd slices):
+#   systemd-run --user -p CPUQuota=120% --unit=NAME convert_h264.sh FILE...
 set -u
 ROOT=/mnt/hdd
 BAK=$ROOT/.hevc-originals
