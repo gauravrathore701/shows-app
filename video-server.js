@@ -41,7 +41,10 @@ const EIGHT_BIT = new Set(['yuv420p', 'yuvj420p']);
 const probeCache = new Map();
 
 function probeMedia(filePath) {
-  if (probeCache.has(filePath)) return probeCache.get(filePath);
+  // keyed by mtime so a file re-encoded in place (HEVC → H.264) is re-probed
+  let key = filePath;
+  try { key += ':' + fs.statSync(filePath).mtimeMs; } catch {}
+  if (probeCache.has(key)) return probeCache.get(key);
   let info = null;
   try {
     const raw = execFileSync('ffprobe', [
@@ -57,7 +60,7 @@ function probeMedia(filePath) {
   // Only cache a SUCCESSFUL probe. Caching null meant one ffprobe failure
   // during a USB dropout poisoned this file for the life of the process:
   // needsTranscode() then fell back to the filename heuristic forever.
-  if (info) probeCache.set(filePath, info);
+  if (info) probeCache.set(key, info);
   return info;
 }
 

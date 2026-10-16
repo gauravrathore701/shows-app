@@ -23,12 +23,13 @@ const NEXT_UP_SEC = 10;
 const SKIP_INTRO_GRACE_SEC = 3;
 
 // hls.js defaults stop fetching ~30s / 60MB ahead, which shows up as "loads a
-// bit, then waits". Keep ~5 min buffered ahead instead; the byte cap must be
-// raised too or it kicks in first at these durations.
+// bit, then waits". Keep ~25 min buffered ahead instead; the byte cap must be
+// raised too or it kicks in first at these durations. (Browser MSE quota may
+// still cap it lower; hls.js backs off on QuotaExceeded.)
 const HLS_CONFIG = {
-  maxBufferLength: 300,
-  maxMaxBufferLength: 600,
-  maxBufferSize: 200 * 1000 * 1000,
+  maxBufferLength: 1500,
+  maxMaxBufferLength: 1800,
+  maxBufferSize: 400 * 1000 * 1000,
   backBufferLength: 90, // free memory behind playhead (mobile tabs); server re-serves cached segments on rewind
 };
 
