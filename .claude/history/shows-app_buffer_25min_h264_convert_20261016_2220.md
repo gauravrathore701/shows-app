@@ -8,3 +8,4 @@
 - Running as user unit `avatar-s1-h264` (E20 first, then E01–E19). ~13 min/episode, ~4.5 h total.
   Log: `journalctl --user -u avatar-s1-h264`.
 - 22:49: live HLS seg took 8.5s/6s while converter ran (nice ignored across slices) → set CPUQuota=120% on avatar-s1-h264, seg back to 2.9s. Converter now ~35 min/ep, done ~09:00.
+- 22:50: switched to PC encode (PC=GAURAV@192.168.50.2 in script: scp up, libx264 on Nitro, scp back, Pi swaps). Unit avatar-s1-h264-pc, E19 first. ~3 min/ep, Pi load back <1.
