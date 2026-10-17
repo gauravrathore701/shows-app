@@ -9,3 +9,7 @@
   Log: `journalctl --user -u avatar-s1-h264`.
 - 22:49: live HLS seg took 8.5s/6s while converter ran (nice ignored across slices) → set CPUQuota=120% on avatar-s1-h264, seg back to 2.9s. Converter now ~35 min/ep, done ~09:00.
 - 22:50: switched to PC encode (PC=GAURAV@192.168.50.2 in script: scp up, libx264 on Nitro, scp back, Pi swaps). Unit avatar-s1-h264-pc, E19 first. ~3 min/ep, Pi load back <1.
+
+## 2026-10-17 07:46 — Season 2 + 3 on PC
+`systemd-run --user --unit=avatar-s23-h264-pc --setenv=PC=GAURAV@192.168.50.2 convert_h264.sh <S02/*.mp4> <S03/*.mp4>`
+41 eps (S02 20 + S03 21, all hevc 10-bit), order S02E01 → S03E21, ETA ~2h. S1 finished 23:43 on 16 Oct, 20/20 h264, 0 fails.
