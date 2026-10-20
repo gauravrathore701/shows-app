@@ -64,6 +64,13 @@ for f in "$@"; do
   if ! awk -v a="$d0" -v b="$d1" 'BEGIN{exit !(b>0 && (a-b)<2 && (b-a)<2)}'; then
     echo "FAIL duration $name ($d0 vs $d1)"; rm -f "$tmp"; continue
   fi
+  # container length alone missed GWH 2026-10-20: video 2h06m, audio cut at 1h18m → check the audio track too
+  if [[ -n $a ]]; then
+    a1=$(ffprobe -v error -select_streams a:0 -show_entries packet=pts_time -of csv=p=0 "$tmp" | tail -1)
+    if ! awk -v a="$d0" -v b="$a1" 'BEGIN{exit !(b>0 && (a-b)<5)}'; then
+      echo "FAIL audio $name (audio ends ${a1}s of ${d0}s)"; rm -f "$tmp"; continue
+    fi
+  fi
 
   dest="$BAK/${f#$ROOT/}"
   mkdir -p "$(dirname "$dest")" && mv -n "$f" "$dest" && mv "$tmp" "$f" \
