@@ -22,6 +22,25 @@ const NEXT_UP_SEC = 10;
 // skipped without being asked twice.
 const SKIP_INTRO_GRACE_SEC = 3;
 
+// Server says "HLS" for anything outside H.264 8-bit + AAC/MP3, but many browsers
+// decode more (Poco Chrome: HEVC 8-bit, AV1, Opus — not HEVC 10-bit or EAC3/AC3).
+// Ask the browser with the exact RFC 6381 codec string; in the 2026-10-20 codec-poc
+// run its answer matched real playback for every file.
+const hex2 = (n) => Number(n).toString(16).padStart(2, '0').toUpperCase();
+function browserCanDecode({ vcodec, vprofile, vlevel, pixFmt, acodec }) {
+  if (typeof MediaSource === 'undefined' || !MediaSource.isTypeSupported) return false;
+  const ten = /10/.test(pixFmt || '');
+  const v = {
+    h264: () => `avc1.${({ High: '64', Main: '4D', 'High 10': '6E' }[vprofile] || '42')}00${hex2(vlevel || 40)}`,
+    hevc: () => (ten ? `hvc1.2.4.L${vlevel || 120}.B0` : `hvc1.1.6.L${vlevel || 120}.B0`),
+    av1: () => `av01.0.${String(vlevel ?? 8).padStart(2, '0')}M.${ten ? '10' : '08'}`,
+  }[vcodec];
+  const a = { aac: 'mp4a.40.2', mp3: 'mp4a.69', opus: 'opus', ac3: 'ac-3', eac3: 'ec-3', flac: 'flac' }[acodec];
+  if (!v || (acodec && !a)) return false;
+  return MediaSource.isTypeSupported(`video/mp4; codecs="${v()}"`) &&
+    (!acodec || MediaSource.isTypeSupported(`audio/mp4; codecs="${a}"`));
+}
+
 // hls.js defaults stop fetching ~30s / 60MB ahead, which shows up as "loads a
 // bit, then waits". Keep ~25 min buffered ahead instead; the byte cap must be
 // raised too or it kicks in first at these durations. (Browser MSE quota may
@@ -70,6 +89,7 @@ export default function WatchPage({ params }) {
   // while that request is in flight.
   const fileUrl = `/api/stream/${encodeURIComponent(decodedShow)}/${decodedPath.map(encodeURIComponent).join('/')}`;
   const [useHls, setUseHls] = useState(null);
+  const [direct, setDirect] = useState(false);   // raw file the server would have transcoded
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +99,12 @@ export default function WatchPage({ params }) {
     // that no reload can fix.
     fetch(`${fileUrl}/codec.json`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!cancelled) setUseHls(d ? !!d.hls : /x265|hevc|h\.?265/i.test(decodedEp)); })
+      .then((d) => {
+        if (cancelled) return;
+        const raw = !!(d && d.hls && d.probed && browserCanDecode(d));
+        setDirect(raw);
+        setUseHls(raw ? false : d ? !!d.hls : /x265|hevc|h\.?265/i.test(decodedEp));
+      })
       .catch(() => { if (!cancelled) setUseHls(/x265|hevc|h\.?265/i.test(decodedEp)); });
     return () => { cancelled = true; };
   }, [fileUrl, decodedEp]);
@@ -146,7 +171,7 @@ export default function WatchPage({ params }) {
   // — so it fell through to hls.js, which fetch()ed the whole 179 MB file as if
   // it were a manifest (twice) and then gave up with a dead player. The browser
   // demuxes Matroska fine; only the provider hint was wrong.
-  const srcUrl = useHls ? `${fileUrl}/index.m3u8` : fileUrl;
+  const srcUrl = useHls ? `${fileUrl}/index.m3u8` : direct ? `${fileUrl}?direct=1` : fileUrl;
 
   const watchKey = isSeasonal ? `${decodedShow}/${decodedSeason}` : decodedShow;
   const seasonHref = isSeasonal ? `/show/${showName}/${encodeURIComponent(decodedSeason)}` : null;
@@ -269,8 +294,16 @@ export default function WatchPage({ params }) {
     if (!v || useHls === null) return;
 
     if (!useHls) {
+      // browser said yes but can't actually play it (error, or a black frame
+      // with audio only) → back to the server's HLS transcode
+      const fallback = () => { setDirect(false); setUseHls(true); };
+      const check = () => { if (!v.videoWidth) fallback(); };
+      if (direct) { v.addEventListener('error', fallback); v.addEventListener('loadedmetadata', check); }
       v.src = srcUrl;
-      return () => { v.removeAttribute('src'); v.load(); };
+      return () => {
+        v.removeEventListener('error', fallback); v.removeEventListener('loadedmetadata', check);
+        v.removeAttribute('src'); v.load();
+      };
     }
 
     if (v.canPlayType('application/vnd.apple.mpegurl')) {
@@ -291,7 +324,7 @@ export default function WatchPage({ params }) {
       dead = true;
       if (hls) hls.destroy();
     };
-  }, [srcUrl, useHls]);
+  }, [srcUrl, useHls, direct]);
 
   function seekToResume() {
     if (resumed.current) return;

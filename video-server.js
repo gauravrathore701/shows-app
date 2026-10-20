@@ -49,13 +49,16 @@ function probeMedia(filePath) {
   try {
     const raw = execFileSync('ffprobe', [
       '-v', 'quiet', '-print_format', 'json',
-      '-show_entries', 'stream=codec_type,codec_name,pix_fmt',
+      '-show_entries', 'stream=codec_type,codec_name,pix_fmt,profile,level',
       filePath,
     ], { timeout: 8000 }).toString();
     const streams = JSON.parse(raw).streams || [];
     const v = streams.find((s) => s.codec_type === 'video') || {};
     const a = streams.find((s) => s.codec_type === 'audio') || {};
-    info = { vcodec: v.codec_name || '', pixFmt: v.pix_fmt || '', acodec: a.codec_name || '' };
+    // profile/level let the watch page build the exact codec string and ask the
+    // browser itself (MediaSource.isTypeSupported) before falling back to HLS
+    info = { vcodec: v.codec_name || '', pixFmt: v.pix_fmt || '', acodec: a.codec_name || '',
+      vprofile: v.profile || '', vlevel: v.level ?? null };
   } catch { info = null; }
   // Only cache a SUCCESSFUL probe. Caching null meant one ffprobe failure
   // during a USB dropout poisoned this file for the life of the process:
@@ -410,7 +413,8 @@ const server = http.createServer((req, res) => {
 
   // Undecodable in a browser → transcode on the fly (legacy progressive path;
   // watch page uses HLS)
-  if (needsTranscode(filePath)) {
+  // ?direct=1 → the watch page asked the browser and it can decode this file raw
+  if (needsTranscode(filePath) && !/[?&]direct=1\b/.test(req.url)) {
     serveTranscoded(filePath, fileSize, res, rangeHeader);
     return;
   }

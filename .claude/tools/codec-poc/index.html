@@ -1,0 +1,65 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codec POC</title>
+<style>body{background:#212529;color:#DEE2E6;font:14px system-ui;margin:10px}
+.c{background:#343A40;border-radius:8px;padding:10px;margin:10px 0}b{color:#E9ECEF}
+.y{color:#8f8}.n{color:#f88}video{width:100%;background:#000;margin-top:6px}
+button{background:#495057;color:#E9ECEF;border:0;border-radius:6px;padding:8px 12px}pre{white-space:pre-wrap;margin:4px 0}</style>
+<h3>Direct-play codec POC</h3><p>Results auto-send to the Pi. Tap Play on each, one at a time.</p><div id="ua"></div><div id="out"></div>
+<script>
+// ffprobe → RFC 6381 codec strings the browser APIs understand
+const hex = (n) => n.toString(16).padStart(2, '0').toUpperCase();
+function vstr(i) {
+  const tenBit = /10/.test(i.pixFmt || '');
+  if (i.vcodec === 'h264') return 'avc1.' + ({ High: '64', Main: '4D', Baseline: '42', 'Constrained Baseline': '42' }[i.profile] || '64') + '00' + hex(i.level || 40);
+  if (i.vcodec === 'hevc') return tenBit ? `hvc1.2.4.L${i.level || 120}.B0` : `hvc1.1.6.L${i.level || 120}.B0`;
+  if (i.vcodec === 'av1') return `av01.0.${String(i.level ?? 8).padStart(2, '0')}M.${tenBit ? 10 : '08'}`;
+  if (i.vcodec === 'vp9') return tenBit ? 'vp09.02.40.10' : 'vp09.00.40.08';
+  return i.vcodec;
+}
+const astr = (c) => ({ aac: 'mp4a.40.2', mp3: 'mp4a.69', opus: 'opus', ac3: 'ac-3', eac3: 'ec-3', flac: 'flac', dts: 'dtsc' }[c] || c);
+const report = (name, kind, html) => fetch('/result', { method: 'POST', body: JSON.stringify({ t: new Date().toISOString(), ua: navigator.userAgent, name, kind, result: html.replace(/<[^>]+>/g, ' ') }) });
+const yn = (ok, t) => `<span class="${ok ? 'y' : 'n'}">${ok ? '✔' : '✘'} ${t}</span>`;
+
+async function checks(i) {
+  const v = vstr(i), a = astr(i.acodec), el = document.createElement('video'), out = [];
+  for (const box of ['mp4', 'webm']) {
+    const mime = `video/${box}; codecs="${v}"`, amime = `audio/${box}; codecs="${a}"`;
+    out.push(`${box}: video ${yn(MediaSource.isTypeSupported(mime), v)} · audio ${yn(MediaSource.isTypeSupported(amime), a)}`);
+  }
+  try {
+    const d = await navigator.mediaCapabilities.decodingInfo({ type: 'media-source',
+      video: { contentType: `video/mp4; codecs="${v}"`, width: i.width, height: i.height, bitrate: i.bitrate, framerate: i.fps } });
+    out.push(`decode: ${yn(d.supported, 'supported')} ${yn(d.smooth, 'smooth')} ${yn(d.powerEfficient, 'hardware')}`);
+  } catch (e) { out.push('decodingInfo error ' + e.message); }
+  out.push(`mkv canPlayType: "${el.canPlayType('video/x-matroska')}"`);
+  return out.join('<br>');
+}
+
+// the real test: play the raw file 8 s, count decoded frames / audio bytes
+function play(n, box) {
+  const v = box.querySelector('video') || box.appendChild(document.createElement('video')), r = box.querySelector('.r');
+  v.controls = true; v.src = '/f/' + n; r.textContent = 'loading…';
+  v.onerror = () => { r.innerHTML = yn(false, 'error ' + (v.error && v.error.code) + ' ' + (v.error && v.error.message || '')); report(box.dataset.name, 'play-error', r.innerHTML); };
+  v.play().catch((e) => r.innerHTML = yn(false, e.message));
+  setTimeout(() => {
+    const q = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : {};
+    const ab = v.webkitAudioDecodedByteCount, vid = v.videoWidth > 0 && q.totalVideoFrames > 0;
+    r.innerHTML = `${yn(vid, `video ${v.videoWidth}x${v.videoHeight}, ${q.totalVideoFrames} frames, ${q.droppedVideoFrames} dropped`)}<br>` +
+      `${yn(ab > 0, 'audio ' + (ab === undefined ? 'n/a (not Chrome)' : ab + ' bytes decoded'))}<br>t=${v.currentTime.toFixed(1)}s`;
+    report(box.dataset.name, 'play', r.innerHTML);
+  }, 8000);
+}
+
+document.getElementById('ua').textContent = navigator.userAgent;
+fetch('/list').then((r) => r.json()).then(async (list) => {
+  const out = document.getElementById('out');
+  let ck;
+  for (const [n, i] of list.entries()) {
+    const box = document.createElement('div'); box.className = 'c'; box.dataset.name = i.name;
+    box.innerHTML = `<b>${i.name}</b><pre>${i.ext} · ${i.vcodec} ${i.profile} ${i.pixFmt} ${i.width}x${i.height} · ${i.acodec}</pre>` +
+      `${ck = await checks(i), ck}<br><button>Play raw 8s test</button><div class="r"></div>`;
+    box.querySelector('button').onclick = () => play(n, box);
+    out.appendChild(box); report(i.name, 'support', ck);
+  }
+});
+</script>
