@@ -18,3 +18,16 @@
 - Original was deleted 11:46 (Gaurav asked). PC D:/render/h264/in.mp4 is same size as the GWH original but its head was
   overwritten by the cut-off Me Before You upload (probes as hevc/aac 6614 s) → GWH data likely survives after the head; not touched.
 - convert_h264.sh: new FAIL audio check (last audio pts within 5 s of source length). Backup .bak-20261020c. Tested: flags GWH.
+
+## 16:25 GWH audio recovered + fixed
+- Copied laptop D:/render/h264/in.mp4 → /mnt/hdd/.recovery/gwh_partial.bin. First 329 MB = Me Before You (overwritten); GWH Matroska clusters intact from 345465178 (13:56) to end, 2078 clusters, 0 resyncs.
+- Track 2 = Opus 5.1. Synthesised EBML/Tracks header (OpusHead 6ch, family 1, 4 streams/2 coupled, map 0,4,1,2,3,5) + copied only audio blocks → gwh_audio_clean.mka → rec_fixed.mka (index, ts −836.494 s).
+- Match vs converted audio: corr 1.000 @2000 s and @4650 s.
+- fixed_audio.m4a = converted AAC 0–840 s + recovered Opus 840 s–end, ffmpeg default stereo downmix (same as convert; first try with custom pan was 6 dB quiet → redone). Levels −32.2 dB both.
+- New file: video copy + fixed AAC + 2 mov_text; audio ends 7593.00 of 7593.01; sync corr 1.000 @6000/@7400 s.
+- Swapped in. Old converted (audio cut) kept: /mnt/hdd/.recovery/GWH_converted_audio_cut_1h18.mkv (5.9G) + recovery temp files — delete after Gaurav verifies.
+
+## 16:40 PC files consolidated (Gaurav)
+- Nitro: moved 17 loose D:\ files (claudy_*, *.ps1, claude-legacy-memory.md) + D:\render + D:\anim → D:\Claudy Rex Work Directory\ (README.txt there).
+  Updated 22 Claudy* scheduled tasks + 26 scripts inside. The GWH partial copy is now D:\Claudy Rex Work Directory\render\h264\in.mp4.
+- convert_h264.sh: RD var with quoted spaced path; scp+ssh ffmpeg round-trip tested OK.

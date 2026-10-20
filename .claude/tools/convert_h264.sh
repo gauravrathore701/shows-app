@@ -16,6 +16,7 @@ BAK=$ROOT/.hevc-originals
 PC=${PC:-}
 # HostKeyAlias: same Nitro host key whether reached by cable or WiFi IP
 KEY=(-i /home/gaurav/.ssh/id_nitro -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o HostKeyAlias=192.168.50.2)
+RD='D:/Claudy Rex Work Directory/render/h264'   # Nitro work dir (all Claude files live under that folder)
 VENC='-c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p'
 AENC='-c:a aac -ac 2 -b:a 192k'   # Opus/AC3/EAC3/DTS → stereo AAC (browsers + phones)
 
@@ -25,9 +26,9 @@ encode() {  # $1 src  $2 out   (uses per-file $ARGS; with PC set every job runs 
     return
   fi
   /home/gaurav/Projects/daily-script/wol_pc.sh >/dev/null &&
-  scp -q "${KEY[@]}" "$1" "$PC:D:/render/h264/in.mp4" &&
-  ssh "${KEY[@]}" "$PC" "ffmpeg -hide_banner -loglevel error -nostdin -i D:/render/h264/in.mp4 $ARGS -y D:/render/h264/out.mp4" &&
-  scp -q "${KEY[@]}" "$PC:D:/render/h264/out.mp4" "$2"
+  scp -q "${KEY[@]}" "$1" "$PC:$RD/in.mp4" &&
+  ssh "${KEY[@]}" "$PC" "ffmpeg -hide_banner -loglevel error -nostdin -i \"$RD/in.mp4\" $ARGS -y \"$RD/out.mp4\"" &&
+  scp -q "${KEY[@]}" "$PC:$RD/out.mp4" "$2"
 }
 
 fails=0
