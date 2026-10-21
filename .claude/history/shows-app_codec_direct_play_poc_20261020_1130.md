@@ -24,3 +24,6 @@ Library (878): direct now 264; +59 hevc8/aac newly direct; 78 audio-only (ac3/ea
 - convert_h264.sh: vok = h264 8b | hevc 8b | av1; aok += opus; hevc copy gets -tag:v hvc1. Backup .bak-20261020b. Swapped via mv (running job safe).
 - queue-poco.txt: 554 files (78 audio-only first, then 476 video, smallest first). NOT started — waiting on Gaurav.
 - GWH done 11:39: h264 + aac + 2 mov_text, 7593s, 5.9G (orig 2.4G in .hevc-originals). Watcher stopped queue at Me Before You upload.
+
+## 11:46 originals deleted (Gaurav asked)
+- Verified all 62 converted copies (h264, duration within 2s), then rm'd 61 Avatar + 1 GWH originals from /mnt/hdd/.hevc-originals, rmdir'd empty dirs. .hevc-originals kept (empty). HDD 170G → 184G free.
