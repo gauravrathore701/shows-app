@@ -57,6 +57,8 @@ function loadShows() {
         let suggestionPoint = 0;
         let tags = [];
         let addedDate = '';
+        let greekOrder = null;
+        let greekNote = '';
         try {
           const meta = fs.readFileSync(path.join(showPath, 'metadata.txt'), 'utf8');
           const typeMatch = meta.match(/^type=(.+)/m);
@@ -69,9 +71,14 @@ function loadShows() {
           if (spMatch) suggestionPoint = parseInt(spMatch[1].trim(), 10) || 0;
           if (tagsMatch) tags = tagsMatch[1].split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
           if (addedMatch) addedDate = addedMatch[1].trim();
+          // Greek Myth tab membership + its watch position (1 = watch first)
+          const goMatch = meta.match(/^greekOrder=(\d+)/m);
+          const gnMatch = meta.match(/^greekNote=(.+)/m);
+          if (goMatch) greekOrder = parseInt(goMatch[1], 10);
+          if (gnMatch) greekNote = gnMatch[1].trim();
         } catch {}
 
-        return { name: d.name, count: episodeCount, type, heroImage, suggestionPoint, tags, addedDate, videoFile };
+        return { name: d.name, count: episodeCount, type, heroImage, suggestionPoint, tags, addedDate, videoFile, greekOrder, greekNote };
       })
       // Pinned shows first (suggestionPoint), then newest upload, then alphabetical
       .sort((a, b) =>

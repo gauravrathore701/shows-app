@@ -699,3 +699,27 @@ body:has(.watch-page) .site-footer-inner { max-width: none; padding-left: 2rem; 
   border-radius: 999px; padding: .32rem .8rem;
   pointer-events: none;
 }
+
+/* Greek Myth tab — watch-order sidebar beside the grid, stacked on phones */
+.collection-layout { display: grid; grid-template-columns: 240px 1fr; gap: 1.5rem; align-items: start; }
+.watch-order {
+  position: sticky; top: 5rem;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  padding: 1rem 1.1rem;
+}
+.watch-order-title { font-weight: 700; color: var(--heading); margin-bottom: .6rem; }
+.watch-order ol { margin: 0; padding-left: 1.3rem; display: grid; gap: .7rem; }
+.watch-order li { color: var(--accent); font-weight: 700; }
+.watch-order a { color: var(--heading); }
+.watch-order a:hover { color: var(--accent); }
+.watch-order-note { font-weight: 400; font-size: .8rem; color: var(--text-dim); margin-top: .15rem; }
+.order-badge {
+  position: absolute; top: .5rem; left: .5rem; z-index: 1;
+  min-width: 1.8rem; height: 1.8rem; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: var(--accent-text); font-weight: 700; font-size: .9rem;
+}
+@media (max-width: 640px) {
+  .collection-layout { grid-template-columns: 1fr; }
+  .watch-order { position: static; }
+}

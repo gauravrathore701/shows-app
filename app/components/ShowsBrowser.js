@@ -10,6 +10,7 @@ const TABS = [
   { key: 'hollywood', label: 'Hollywood', icon: '🎬' },
   { key: 'bollywood', label: 'Bollywood', icon: '🎭' },
   { key: 'anime',     label: 'Anime',     icon: '🎌' },
+  { key: 'greek',     label: 'Greek Myth', icon: '🏛️' },
 ];
 
 // Movies are a single file — skip the episode list and open the player directly
@@ -39,7 +40,9 @@ export default function ShowsBrowser({ shows, tabTypes, typeIcons, initialTab, i
 
   const results = useMemo(() => {
     const typeFilter = tabTypes[tab];
-    let list = typeFilter ? indexed.filter(s => typeFilter.includes(s.type)) : indexed;
+    let list = tab === 'greek'
+      ? indexed.filter(s => s.greekOrder).sort((a, b) => a.greekOrder - b.greekOrder)
+      : typeFilter ? indexed.filter(s => typeFilter.includes(s.type)) : indexed;
 
     const tokens = query.toLowerCase().replace(/[-_]/g, ' ').split(/\s+/).filter(Boolean);
     if (tokens.length) list = list.filter(s => tokens.every(t => s._hay.includes(t)));
@@ -48,6 +51,7 @@ export default function ShowsBrowser({ shows, tabTypes, typeIcons, initialTab, i
   }, [indexed, tab, query, tabTypes]);
 
   const searching = query.trim().length > 0;
+  const greekOrder = indexed.filter(s => s.greekOrder).sort((a, b) => a.greekOrder - b.greekOrder);
 
   return (
     <>
@@ -92,11 +96,26 @@ export default function ShowsBrowser({ shows, tabTypes, typeIcons, initialTab, i
           </div>
         </div>
       ) : (
+        <div className={tab === 'greek' ? 'collection-layout' : undefined}>
+        {tab === 'greek' && (
+          <aside className="watch-order">
+            <div className="watch-order-title">Watch order</div>
+            <ol>
+              {greekOrder.map(s => (
+                <li key={s.name}>
+                  <Link href={cardHref(s)}>{s.name}</Link>
+                  {s.greekNote && <div className="watch-order-note">{s.greekNote}</div>}
+                </li>
+              ))}
+            </ol>
+          </aside>
+        )}
         <div className="shows-grid">
           {results.map(show => (
             <Link key={show.name} href={cardHref(show)}>
               <div className="show-card">
                 <div className="show-thumb">
+                  {tab === 'greek' && <span className="order-badge">{show.greekOrder}</span>}
                   {show.heroImage ? (
                     <Image
                       src={show.heroImage}
@@ -127,6 +146,7 @@ export default function ShowsBrowser({ shows, tabTypes, typeIcons, initialTab, i
               </div>
             </Link>
           ))}
+        </div>
         </div>
       )}
     </>
