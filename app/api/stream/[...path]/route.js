@@ -12,14 +12,15 @@ function getMime(filePath) {
 const VIDEO_PORT = 4179;
 
 // Virtual paths owned by video-server: /<file>/index.m3u8, /<file>/segN.ts,
-// /<file>/codec.json. Requests through the proxy (4180) never reach this route,
+// /<file>/codec.json, /<file>/tracks.json, /<file>/subN.vtt. Requests through the proxy (4180) never reach this route,
 // but hitting Next directly on 4178 (LAN) must still get HLS + the codec probe,
 // otherwise every HEVC file falls back to a raw stream the browser can't decode.
-const VIRTUAL = /^(index\.m3u8|seg\d+\.ts|codec\.json)$/;
+const VIRTUAL = /^(index\.m3u8|seg\d+\.ts|codec\.json|tracks\.json|sub\d+\.vtt)$/;
 
-async function forwardToVideoServer(segments) {
+async function forwardToVideoServer(segments, search = '') {
+  // search carries ?audio=N for an audio-switched HLS stream
   const url = `http://localhost:${VIDEO_PORT}/` +
-    segments.map((s) => encodeURIComponent(decodeURIComponent(s))).join('/');
+    segments.map((s) => encodeURIComponent(decodeURIComponent(s))).join('/') + search;
   try {
     const upstream = await fetch(url);
     const headers = new Headers();
@@ -37,7 +38,7 @@ export async function GET(request, { params }) {
   const segments = (await params).path;
 
   if (VIRTUAL.test(decodeURIComponent(segments[segments.length - 1] || ''))) {
-    return forwardToVideoServer(segments);
+    return forwardToVideoServer(segments, new URL(request.url).search);
   }
 
   const filePath = path.join(HDD_ROOT, ...segments.map(decodeURIComponent));

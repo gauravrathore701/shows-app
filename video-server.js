@@ -2,9 +2,12 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { spawn, execFileSync } from 'child_process';
+import { listTracks, getVtt, getTrackInfo, getKeyframeSegments } from './video-tracks.js';
 
-const HDD_ROOT = '/mnt/hdd';
-const PORT = 4179;
+// Env overrides exist only so a scratch library can be tested on another port;
+// the systemd unit sets neither.
+const HDD_ROOT = process.env.SHOWS_ROOT || '/mnt/hdd';
+const PORT = Number(process.env.SHOWS_VIDEO_PORT) || 4179;
 
 const MIME = {
   '.mp4': 'video/mp4',
@@ -100,28 +103,58 @@ function getDuration(filePath) {
 // the user gets true random seeking and each segment can retry on a disk blip.
 const SEG = 6; // seconds per segment
 
-function buildPlaylist(duration) {
-  const count = Math.ceil(duration / SEG);
+// segs: [{ start, dur }]. q: query suffix carried onto every segment URL so an
+// audio-switched stream (?audio=N) keeps asking for the same track.
+function buildPlaylist(segs, q = '') {
+  const target = Math.max(SEG, Math.ceil(Math.max(...segs.map((s) => s.dur))));
   const lines = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
-    `#EXT-X-TARGETDURATION:${SEG}`,
+    `#EXT-X-TARGETDURATION:${target}`,
     '#EXT-X-MEDIA-SEQUENCE:0',
     '#EXT-X-PLAYLIST-TYPE:VOD',
   ];
-  for (let i = 0; i < count; i++) {
-    const segDur = i === count - 1 ? duration - i * SEG : SEG;
-    lines.push(`#EXTINF:${segDur.toFixed(3)},`);
-    lines.push(`seg${i}.ts`);
-  }
+  segs.forEach((s, i) => {
+    lines.push(`#EXTINF:${s.dur.toFixed(3)},`);
+    lines.push(`seg${i}.ts${q}`);
+  });
   lines.push('#EXT-X-ENDLIST');
   return lines.join('\n') + '\n';
 }
 
-function serveHlsPlaylist(filePath, res) {
+function gridSegments(duration) {
+  const count = Math.ceil(duration / SEG);
+  return Array.from({ length: count }, (_, i) => ({
+    start: i * SEG,
+    dur: i === count - 1 ? duration - i * SEG : SEG,
+  }));
+}
+
+// ?audio=N on a file whose video is already browser-safe H.264 8-bit → copy the
+// video (keyframe-aligned segments) and only swap the audio. Everything else
+// keeps the fixed 6s grid and the libx264 re-encode.
+async function hlsPlan(filePath, audio) {
   const duration = getDuration(filePath);
-  if (!duration) { res.writeHead(500); res.end('Could not probe duration'); return; }
-  const body = buildPlaylist(duration);
+  if (!duration) return null;
+  if (audio !== null) {
+    const t = await getTrackInfo(filePath).catch(() => null);
+    if (t && !t.audio[audio]) return null;
+    const v = t && t.video;
+    if (v && BROWSER_VIDEO.has(v.codec) && EIGHT_BIT.has(v.pixFmt)) {
+      try {
+        return { copy: true, acodec: t.audio[audio].codec, segs: await getKeyframeSegments(filePath, SEG, duration) };
+      } catch (e) {
+        console.error('[hls] keyframe probe failed, re-encoding instead:', e.stderr || e.message);
+      }
+    }
+  }
+  return { copy: false, segs: gridSegments(duration) };
+}
+
+async function serveHlsPlaylist(filePath, res, audio) {
+  const plan = await hlsPlan(filePath, audio);
+  if (!plan) { res.writeHead(404); res.end('No such audio track, or duration probe failed'); return; }
+  const body = buildPlaylist(plan.segs, audio !== null ? `?audio=${audio}` : '');
   res.writeHead(200, {
     ...CORS,
     'Content-Type': 'application/vnd.apple.mpegurl',
@@ -130,17 +163,41 @@ function serveHlsPlaylist(filePath, res) {
   res.end(body);
 }
 
+// Video-copy segment for ?audio=N on H.264 8-bit sources (see hlsPlan). Seeks
+// land exactly on the boundary keyframe, the cut stops before the next one, and
+// every segment is offset by the same +1s so the muxer never shifts a segment
+// with negative B-frame timestamps on its own (segment 0 did, by 0.07s, which
+// broke the contiguous timeline hls.js expects). Audio is copied when already
+// AAC, otherwise encoded.
+function copySegmentArgs(filePath, seg, aMap, acodec) {
+  return [
+    '-hide_banner', '-loglevel', 'error',
+    '-ss', seg.ss.toFixed(3),
+    '-i', filePath,
+    ...(seg.cut !== null ? ['-t', seg.cut.toFixed(4)] : []),
+    '-map', '0:v:0', '-map', aMap,
+    '-c:v', 'copy',
+    ...(acodec === 'aac' ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '160k', '-ac', '2']),
+    '-output_ts_offset', (seg.ss + 1).toFixed(3),
+    '-muxdelay', '0', '-muxpreload', '0',
+    '-f', 'mpegts', 'pipe:1',
+  ];
+}
+
 // Transcode one segment to MPEG-TS. Buffer it fully before responding so a
 // mid-transcode failure (e.g. HDD dropout) never yields a truncated/cached
 // segment — we can cleanly retry, and only complete segments get cached.
-function serveHlsSegment(filePath, index, res) {
-  const start = index * SEG;
-  const ffArgs = [
+async function serveHlsSegment(filePath, index, res, audio) {
+  const plan = await hlsPlan(filePath, audio);
+  if (!plan || !plan.segs[index]) { res.writeHead(404); res.end('No such segment'); return; }
+  const { start } = plan.segs[index];
+  const aMap = `0:a:${audio ?? 0}`;
+  const ffArgs = plan.copy ? copySegmentArgs(filePath, plan.segs[index], aMap, plan.acodec) : [
     '-hide_banner', '-loglevel', 'error',
     '-ss', start.toFixed(3),
     '-i', filePath,
     '-t', SEG.toFixed(3),
-    '-map', '0:v:0', '-map', '0:a:0',   // first video + first audio only (skip commentary track & PGS subs)
+    '-map', '0:v:0', '-map', aMap,   // first video + chosen audio (default 0; skips PGS subs)
     '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
     '-pix_fmt', 'yuv420p',
     '-vf', 'scale=-2:720',
@@ -349,6 +406,31 @@ const server = http.createServer((req, res) => {
   const playlistMatch = urlPath.match(/^(.+)\/index\.m3u8$/);
   const segmentMatch = urlPath.match(/^(.+)\/seg(\d+)\.ts$/);
   const codecMatch = urlPath.match(/^(.+)\/codec\.json$/);
+  // /<file>/tracks.json — audio + text-subtitle streams for the player menus
+  // /<file>/subN.vtt    — subtitle stream 0:s:N as WebVTT (cached on disk)
+  const tracksMatch = urlPath.match(/^(.+)\/tracks\.json$/);
+  const vttMatch = urlPath.match(/^(.+)\/sub(\d+)\.vtt$/);
+  const audioQ = (req.url.split('?')[1] || '').match(/(?:^|&)audio=(\d{1,2})(?:&|$)/);
+  const audio = audioQ ? parseInt(audioQ[1], 10) : null;
+  if (tracksMatch || vttMatch) {
+    const mediaPath = path.join(HDD_ROOT, (tracksMatch || vttMatch)[1]);
+    if (!mediaPath.startsWith(HDD_ROOT + '/')) { res.writeHead(403); res.end('Forbidden'); return; }
+    if (!fs.existsSync(mediaPath)) { res.writeHead(404); res.end('Not Found'); return; }
+    const job = tracksMatch
+      ? listTracks(mediaPath).then((t) => ({ type: 'application/json', body: JSON.stringify(t) }))
+      : getVtt(mediaPath, parseInt(vttMatch[2], 10)).then((b) => (b ? { type: 'text/vtt; charset=utf-8', body: b } : null));
+    job.then((r) => {
+      if (res.destroyed) return;
+      if (!r) { res.writeHead(404); res.end('No such subtitle'); return; }
+      // keyed on path only, and the file can be re-encoded in place → short cache
+      res.writeHead(200, { ...CORS, 'Content-Type': r.type, 'Cache-Control': 'private, max-age=300' });
+      res.end(r.body);
+    }).catch((e) => {
+      console.error('[tracks]', path.basename(mediaPath), e.stderr || e.message);
+      if (!res.headersSent) { res.writeHead(500); res.end('Probe failed'); }
+    });
+    return;
+  }
   if (codecMatch) {
     const mediaPath = path.join(HDD_ROOT, codecMatch[1]);
     if (!mediaPath.startsWith(HDD_ROOT + '/')) { res.writeHead(403); res.end('Forbidden'); return; }
@@ -372,10 +454,16 @@ const server = http.createServer((req, res) => {
     if (!mediaPath.startsWith(HDD_ROOT + '/')) { res.writeHead(403); res.end('Forbidden'); return; }
     if (!fs.existsSync(mediaPath)) { res.writeHead(404); res.end('Not Found'); return; }
     if (playlistMatch) {
-      console.log(`[hls] playlist ${path.basename(mediaPath)}`);
-      serveHlsPlaylist(mediaPath, res);
+      console.log(`[hls] playlist ${path.basename(mediaPath)}${audio !== null ? ` audio=${audio}` : ''}`);
+      serveHlsPlaylist(mediaPath, res, audio).catch((e) => {
+        console.error('[hls] playlist error', e.message);
+        if (!res.headersSent) { res.writeHead(500); res.end('Playlist error'); }
+      });
     } else {
-      serveHlsSegment(mediaPath, parseInt(segmentMatch[2], 10), res);
+      serveHlsSegment(mediaPath, parseInt(segmentMatch[2], 10), res, audio).catch((e) => {
+        console.error('[hls] segment error', e.message);
+        if (!res.headersSent) { res.writeHead(500); res.end('Segment error'); }
+      });
     }
     return;
   }

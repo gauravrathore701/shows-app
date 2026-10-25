@@ -52,6 +52,63 @@ const HLS_CONFIG = {
   backBufferLength: 90, // free memory behind playhead (mobile tabs); server re-serves cached segments on rewind
 };
 
+// ── Subtitles / audio tracks ───────────────────────────────────────────────
+// The server lists a file's audio streams and its TEXT subtitle streams on
+// /tracks.json (with a dialogue-line count and latin-letter ratio per sub,
+// measured from the converted WebVTT) and serves each sub as /subN.vtt.
+const LANG = {
+  eng: ['English', 'en'], jpn: ['Japanese', 'ja'], spa: ['Spanish', 'es'], por: ['Portuguese', 'pt'],
+  fre: ['French', 'fr'], fra: ['French', 'fr'], ger: ['German', 'de'], deu: ['German', 'de'],
+  ita: ['Italian', 'it'], hin: ['Hindi', 'hi'], kor: ['Korean', 'ko'], chi: ['Chinese', 'zh'],
+  zho: ['Chinese', 'zh'], rus: ['Russian', 'ru'], ara: ['Arabic', 'ar'],
+};
+
+function trackLabel(t, kind) {
+  // a jpn-tagged sub whose text is ~all latin letters is a mislabelled English
+  // track (Anohana / Your Lie in April originals) — don't call it Japanese
+  const code = t.lang === 'jpn' && t.latin >= 0.9 ? 'eng' : t.lang;
+  const lang = LANG[code]?.[0] || '';
+  const title = (t.title || '').trim();
+  if (!title) return lang || `${kind} ${t.i + 1}`;
+  if (!lang || title.toLowerCase().includes(lang.toLowerCase())) return title;
+  return `${lang} · ${title}`;
+}
+
+// Default subtitle = the full English DIALOGUE track. Tags are not trusted:
+// originals carry signs-only tracks flagged default (Anohana, Dororo, Bebop),
+// a signs track tagged eng+forced with the real dialogue tagged jpn (Your Lie
+// in April), and "Dubtitles" next to "Full Subs" (Bebop). So: drop signs/songs
+// and anything with far fewer lines than the busiest track, accept tracks that
+// are English by tag OR by content, then rank.
+const SIGNS = /sign|song|karaoke|forced/i;
+const FULL = /full|dialog/i;
+function pickDefaultSub(subs) {
+  const maxLines = Math.max(0, ...subs.map((s) => s.lines || 0));
+  let best = null;
+  let bestScore = -Infinity;
+  for (const s of subs) {
+    const title = s.title || '';
+    const full = FULL.test(title);
+    if (!full && (s.forced || SIGNS.test(title))) continue;
+    if (maxLines && s.lines != null && s.lines < 0.6 * maxLines) continue;
+    const engTag = s.lang === 'eng' || /engl/i.test(title);
+    const latinish = s.latin == null ? full : s.latin >= 0.9;
+    const untrustedTag = ['jpn', 'und', 'zxx', ''].includes(s.lang) && !/japan/i.test(title);
+    if (!engTag && !(untrustedTag && latinish)) continue;
+    const score = (s.default ? 4 : 0) + (full ? 3 : 0) + (engTag ? 2 : 0)
+      - (/dub|sdh|commentary|\bcc\b/i.test(title) ? 3 : 0) + (s.lines || 0) / 1e5;
+    if (score > bestScore) { bestScore = score; best = s; }
+  }
+  return best ? best.i : -1;
+}
+
+function readPref(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
+}
+function writePref(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
 export default function WatchPage({ params }) {
   const { showName, path } = use(params);
   const decodedShow = decodeURIComponent(showName);
@@ -108,6 +165,53 @@ export default function WatchPage({ params }) {
       .catch(() => { if (!cancelled) setUseHls(/x265|hevc|h\.?265/i.test(decodedEp)); });
     return () => { cancelled = true; };
   }, [fileUrl, decodedEp]);
+
+  // ── Tracks (subtitles + audio) ──────────────────────────────────────────
+  // subSel = subtitle stream index (0:s:N) or -1 for off; audioSel = audio
+  // stream index. Choices are remembered per show, by language + title, since
+  // stream numbers are not guaranteed to line up between episodes.
+  const [tracks, setTracks] = useState(null);
+  const [subSel, setSubSel] = useState(-1);
+  const [audioSel, setAudioSel] = useState(0);
+  const [menu, setMenu] = useState(null);           // 'cc' | 'audio' | null
+  const subKey = `shows_subs:${decodedShow}`;
+  const audioKey = `shows_audio:${decodedShow}`;
+
+  useEffect(() => {
+    let stale = false;
+    setTracks(null);
+    setSubSel(-1);
+    setAudioSel(0);
+    setMenu(null);
+    fetch(`${fileUrl}/tracks.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (stale || !d) return;
+        const subs = d.subs || [];
+        const audio = d.audio || [];
+        setTracks({ subs, audio });
+
+        const sp = readPref(subKey);
+        let sub = -1;
+        if (sp?.off) sub = -1;
+        else {
+          const m = sp && subs.find((s) => s.lang === sp.lang && s.title === sp.title);
+          sub = m ? m.i : pickDefaultSub(subs);
+        }
+        setSubSel(sub);
+
+        const ap = readPref(audioKey);
+        if (ap && audio.length > 1) {
+          const m = audio.find((a) => a.lang === ap.lang && a.title === ap.title) ||
+            audio.find((a) => a.lang === ap.lang);
+          if (m && m.i !== 0) switchAudio(m.i);
+        }
+      })
+      .catch(() => {});
+    return () => { stale = true; };
+    // switchAudio only touches refs/setters; keyed on the file
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileUrl, subKey, audioKey]);
 
   // ── Next episode ────────────────────────────────────────────────────────
   // The watch page is a client component and knows only its own path, so the
@@ -171,7 +275,14 @@ export default function WatchPage({ params }) {
   // — so it fell through to hls.js, which fetch()ed the whole 179 MB file as if
   // it were a manifest (twice) and then gave up with a dead player. The browser
   // demuxes Matroska fine; only the provider hint was wrong.
-  const srcUrl = useHls ? `${fileUrl}/index.m3u8` : direct ? `${fileUrl}?direct=1` : fileUrl;
+  // Any audio stream but the first goes through the server's HLS path with
+  // ?audio=N (video copied when it is already browser-safe H.264, re-encoded
+  // otherwise): browsers have no usable API to pick an audio track themselves.
+  const altAudio = audioSel !== 0;
+  const hlsOn = useHls === null ? null : (useHls || altAudio);
+  const srcUrl = altAudio
+    ? `${fileUrl}/index.m3u8?audio=${audioSel}`
+    : useHls ? `${fileUrl}/index.m3u8` : direct ? `${fileUrl}?direct=1` : fileUrl;
 
   const watchKey = isSeasonal ? `${decodedShow}/${decodedSeason}` : decodedShow;
   const seasonHref = isSeasonal ? `/show/${showName}/${encodeURIComponent(decodedSeason)}` : null;
@@ -183,6 +294,22 @@ export default function WatchPage({ params }) {
   const resumeAt = useRef(0);
   const resumed = useRef(false);
   const canPlayed = useRef(false);
+  // An audio switch reloads the source; until the playhead is restored no
+  // progress may be saved, or the 0:00 of the fresh load would overwrite it.
+  const switching = useRef(false);
+  const wasPaused = useRef(false);
+
+  function switchAudio(i) {
+    const v = video.current;
+    if (v && v.currentTime > 0) {
+      resumeAt.current = v.currentTime;
+      resumed.current = false;
+      switching.current = true;
+      wasPaused.current = v.paused;
+    }
+    canPlayed.current = false;
+    setAudioSel(i);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -213,7 +340,7 @@ export default function WatchPage({ params }) {
 
   const push = useCallback((finished) => {
     const v = video.current;
-    if (!v) return;
+    if (!v || switching.current) return;
     const position = v.currentTime || 0;
     const duration = Number.isFinite(v.duration) ? v.duration : 0;
     if (!duration) return;
@@ -291,12 +418,13 @@ export default function WatchPage({ params }) {
   // drags it into the server render for no reason.
   useEffect(() => {
     const v = video.current;
-    if (!v || useHls === null) return;
+    if (!v || hlsOn === null) return;
 
-    if (!useHls) {
+    if (!hlsOn) {
       // browser said yes but can't actually play it (error, or a black frame
       // with audio only) → back to the server's HLS transcode
       const fallback = () => { setDirect(false); setUseHls(true); };
+      // (only the first audio stream ever plays raw, so altAudio is never set here)
       const check = () => { if (!v.videoWidth) fallback(); };
       if (direct) { v.addEventListener('error', fallback); v.addEventListener('loadedmetadata', check); }
       v.src = srcUrl;
@@ -324,7 +452,139 @@ export default function WatchPage({ params }) {
       dead = true;
       if (hls) hls.destroy();
     };
-  }, [srcUrl, useHls, direct]);
+  }, [srcUrl, hlsOn, direct]);
+
+  // Subtitle modes are set on the <track> elements' TextTracks. Re-applied on
+  // every load: an audio switch swaps the source under the same elements.
+  const trackEls = useRef({});
+  useEffect(() => {
+    const v = video.current;
+    if (!v || !tracks) return undefined;
+    const apply = () => {
+      for (const sub of tracks.subs) {
+        const t = trackEls.current[sub.i]?.track;
+        if (!t) continue;
+        const mode = sub.i === subSel ? 'showing' : 'disabled';
+        if (t.mode !== mode) t.mode = mode;
+      }
+    };
+    apply();
+    v.addEventListener('loadedmetadata', apply);
+    return () => v.removeEventListener('loadedmetadata', apply);
+  }, [tracks, subSel, srcUrl]);
+
+  // In fullscreen the browser's own captions menu is the only control, so
+  // follow it: whatever track it turns on (or off) becomes the selection.
+  useEffect(() => {
+    const v = video.current;
+    if (!v || !tracks?.subs.length) return undefined;
+    const onChange = () => {
+      let showing = -1;
+      for (const sub of tracks.subs) {
+        if (trackEls.current[sub.i]?.track?.mode === 'showing') showing = sub.i;
+      }
+      setSubSel((cur) => {
+        if (cur === showing) return cur;
+        rememberSub(showing);
+        return showing;
+      });
+    };
+    v.textTracks.addEventListener('change', onChange);
+    return () => v.textTracks.removeEventListener('change', onChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracks]);
+
+  // Tap anywhere else closes an open track menu.
+  useEffect(() => {
+    if (!menu) return undefined;
+    const close = (e) => { if (!e.target.closest?.('.track-menu-wrap')) setMenu(null); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [menu]);
+
+  function rememberSub(i) {
+    const sub = tracks?.subs.find((x) => x.i === i);
+    writePref(subKey, sub ? { lang: sub.lang, title: sub.title } : { off: true });
+  }
+
+  function chooseSub(i) {
+    setSubSel(i);
+    rememberSub(i);
+    setMenu(null);
+  }
+
+  function chooseAudio(i) {
+    setMenu(null);
+    const a = tracks?.audio.find((x) => x.i === i);
+    if (a) writePref(audioKey, { lang: a.lang, title: a.title });
+    if (i !== audioSel) switchAudio(i);
+  }
+
+  const hasSubs = !!tracks?.subs.length;
+  const hasAudioChoice = (tracks?.audio.length || 0) > 1;
+  const subName = subSel < 0 ? 'Off' : trackLabel(tracks.subs.find((x) => x.i === subSel) || { i: subSel }, 'Track');
+  const audioName = hasAudioChoice ? trackLabel(tracks.audio.find((x) => x.i === audioSel) || { i: audioSel }, 'Audio') : '';
+
+  // Shown only when the file has text subs and/or more than one audio
+  // stream — a plain single-track title renders exactly as before.
+  const trackTools = (hasSubs || hasAudioChoice) ? (
+    <div className="track-tools">
+      {hasSubs && (
+        <div className="track-menu-wrap">
+          <button
+            type="button"
+            className={`track-btn${subSel >= 0 ? ' on' : ''}`}
+            aria-haspopup="menu"
+            aria-expanded={menu === 'cc'}
+            title="Subtitles"
+            onClick={() => setMenu(menu === 'cc' ? null : 'cc')}
+          >
+            <span className="track-btn-badge">CC</span>
+            <span className="track-btn-label">{subName}</span>
+          </button>
+          {menu === 'cc' && (
+            <div className="track-menu" role="menu" aria-label="Subtitles">
+              <button type="button" role="menuitemradio" aria-checked={subSel < 0}
+                className={subSel < 0 ? 'sel' : ''} onClick={() => chooseSub(-1)}>Off</button>
+              {tracks.subs.map((sub) => (
+                <button key={sub.i} type="button" role="menuitemradio" aria-checked={subSel === sub.i}
+                  className={subSel === sub.i ? 'sel' : ''} onClick={() => chooseSub(sub.i)}>
+                  {trackLabel(sub, 'Track')}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {hasAudioChoice && (
+        <div className="track-menu-wrap">
+          <button
+            type="button"
+            className="track-btn"
+            aria-haspopup="menu"
+            aria-expanded={menu === 'audio'}
+            title="Audio language"
+            onClick={() => setMenu(menu === 'audio' ? null : 'audio')}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16" fill="currentColor">
+              <path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z" />
+            </svg>
+            <span className="track-btn-label">{audioName}</span>
+          </button>
+          {menu === 'audio' && (
+            <div className="track-menu" role="menu" aria-label="Audio">
+              {tracks.audio.map((a) => (
+                <button key={a.i} type="button" role="menuitemradio" aria-checked={audioSel === a.i}
+                  className={audioSel === a.i ? 'sel' : ''} onClick={() => chooseAudio(a.i)}>
+                  {trackLabel(a, 'Audio')}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null;
 
   function seekToResume() {
     if (resumed.current) return;
@@ -332,6 +592,11 @@ export default function WatchPage({ params }) {
     if (!v || !(resumeAt.current > 0)) return;
     resumed.current = true;
     v.currentTime = resumeAt.current;
+    if (switching.current) {
+      switching.current = false;
+      lastSent.current = resumeAt.current;
+      if (wasPaused.current) v.pause();
+    }
   }
 
   function onCanPlay() {
@@ -421,7 +686,18 @@ export default function WatchPage({ params }) {
           onTimeUpdate={onTimeUpdate}
           onPause={() => push(false)}
           onEnded={onEnded}
-        />
+        >
+          {tracks?.subs.map((sub) => (
+            <track
+              key={`${fileUrl}#${sub.i}`}
+              ref={(el) => { if (el) trackEls.current[sub.i] = el; else delete trackEls.current[sub.i]; }}
+              kind="subtitles"
+              src={`${fileUrl}/sub${sub.i}.vtt`}
+              srcLang={LANG[sub.lang]?.[1]}
+              label={trackLabel(sub, 'Track')}
+            />
+          ))}
+        </video>
         {countdown !== null && nextHref && !cancelled && (
           <div className="next-up" role="dialog" aria-label="Next episode">
             <div className="next-up-label">Next episode in {countdown}s</div>
@@ -472,6 +748,7 @@ export default function WatchPage({ params }) {
         </div>
         </div>
         <div className="watch-doodles" data-doodle-slot aria-hidden="true" />
+        {trackTools}
         {nextEpButton}
       </div>
     </div>

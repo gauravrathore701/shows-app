@@ -556,6 +556,49 @@ body:has(.watch-page) .site-footer-inner { max-width: none; padding-left: 2rem; 
   .skip-intro { right: .75rem; bottom: 4.5rem; }
 }
 
+/* ── Subtitle / audio track menus (watch info bar) ──
+   Only rendered for files with text subs or more than one audio stream. */
+.track-tools { display: flex; gap: .5rem; flex-shrink: 0; align-items: center; }
+.track-menu-wrap { position: relative; }
+.track-btn {
+  display: inline-flex; align-items: center; gap: .45rem; max-width: 14rem;
+  padding: .55rem .8rem; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: .8rem; font-weight: 700;
+  color: var(--text-soft); background: var(--surface); border: 1px solid var(--line);
+  transition: all .2s;
+}
+.track-btn:hover, .track-btn[aria-expanded="true"] { border-color: var(--line-hover); color: var(--heading); }
+.track-btn-badge {
+  font-size: .62rem; font-weight: 800; letter-spacing: .04em; padding: .05rem .3rem;
+  border-radius: 4px; border: 1.5px solid currentColor; line-height: 1.2;
+}
+.track-btn.on .track-btn-badge { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.track-btn-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track-menu {
+  position: absolute; right: 0; bottom: calc(100% + .4rem); z-index: 60;
+  min-width: 14rem; max-width: min(22rem, calc(100vw - 2rem)); max-height: 50vh; overflow-y: auto;
+  display: flex; flex-direction: column; padding: .3rem;
+  background: var(--card-float-bg); border: 1px solid var(--card-float-line); border-radius: 10px;
+  box-shadow: 0 10px 30px var(--shadow); backdrop-filter: blur(6px);
+}
+.track-menu button {
+  text-align: left; font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+  padding: .65rem .8rem .65rem 1.7rem; border: 0; border-radius: 6px; position: relative;
+  color: var(--card-float-text); background: transparent;
+}
+.track-menu button:hover { background: var(--surface-hover); }
+.track-menu button.sel::before { content: '\2713'; position: absolute; left: .6rem; color: var(--accent); font-weight: 800; }
+html[data-theme="charcoal"] .track-menu button:hover { background: rgba(255, 255, 255, .08); }
+html[data-theme="charcoal"] .track-menu button.sel::before { color: var(--card-float-text); }
+/* WebVTT cues (also styled in native fullscreen) */
+.player::cue { background: rgba(0, 0, 0, .55); color: #fff; font-family: var(--font); }
+@media (max-width: 640px) {
+  .track-tools { order: 3; width: 100%; }
+  .track-menu-wrap { flex: 1; min-width: 0; }
+  .track-btn { width: 100%; max-width: none; justify-content: center; padding: .65rem .8rem; }
+  .track-menu-wrap:first-child .track-menu { right: auto; left: 0; }
+}
+
 /* Next-episode button in the vidstack control bar (slot: afterPlayButton).
    Sizing comes from .vds-button; only the icon colour is ours. */
 .next-ep-button .vds-icon { width: 80%; height: 80%; }
