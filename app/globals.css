@@ -723,3 +723,4 @@ body:has(.watch-page) .site-footer-inner { max-width: none; padding-left: 2rem; 
   .collection-layout { grid-template-columns: 1fr; }
   .watch-order { position: static; }
 }
+.watch-order-missing, .watch-order-missing span { color: var(--text-faint); font-style: italic; }

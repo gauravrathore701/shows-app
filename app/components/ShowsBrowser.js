@@ -13,6 +13,12 @@ const TABS = [
   { key: 'greek',     label: 'Greek Myth', icon: '🏛️' },
 ];
 
+// Watch-order steps not on disk (yet) — shown greyed in the Greek Myth sidebar
+const GREEK_MISSING = [
+  { greekOrder: 1, name: 'Origenia', greekNote: 'No film found yet — kept as the start' },
+  { greekOrder: 7, name: 'Dune: Part Three (2026)', greekNote: 'India release 18 Dec 2026' },
+];
+
 // Movies are a single file — skip the episode list and open the player directly
 function cardHref(show) {
   if (show.type?.startsWith('movie-') && show.videoFile) {
@@ -51,7 +57,8 @@ export default function ShowsBrowser({ shows, tabTypes, typeIcons, initialTab, i
   }, [indexed, tab, query, tabTypes]);
 
   const searching = query.trim().length > 0;
-  const greekOrder = indexed.filter(s => s.greekOrder).sort((a, b) => a.greekOrder - b.greekOrder);
+  const greekOrder = [...indexed.filter(s => s.greekOrder), ...GREEK_MISSING]
+    .sort((a, b) => a.greekOrder - b.greekOrder);
 
   return (
     <>
@@ -99,11 +106,11 @@ export default function ShowsBrowser({ shows, tabTypes, typeIcons, initialTab, i
         <div className={tab === 'greek' ? 'collection-layout' : undefined}>
         {tab === 'greek' && (
           <aside className="watch-order">
-            <div className="watch-order-title">Watch order</div>
+            <div className="watch-order-title">Watch order: Greek epic → Dune</div>
             <ol>
               {greekOrder.map(s => (
-                <li key={s.name}>
-                  <Link href={cardHref(s)}>{s.name}</Link>
+                <li key={s.name} value={s.greekOrder} className={s.type ? undefined : 'watch-order-missing'}>
+                  {s.type ? <Link href={cardHref(s)}>{s.name}</Link> : <span>{s.name} · not in library</span>}
                   {s.greekNote && <div className="watch-order-note">{s.greekNote}</div>}
                 </li>
               ))}
