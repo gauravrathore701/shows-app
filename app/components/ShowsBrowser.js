@@ -21,6 +21,7 @@ const GREEK_MISSING = [
 
 // Movies are a single file — skip the episode list and open the player directly
 function cardHref(show) {
+  if (show.youtube) return `/yt/${encodeURIComponent(show.name)}`;
   if (show.type?.startsWith('movie-') && show.videoFile) {
     return `/watch/${encodeURIComponent(show.name)}/${encodeURIComponent(show.videoFile)}`;
   }
@@ -136,7 +137,7 @@ export default function ShowsBrowser({ shows, tabTypes, typeIcons, initialTab, i
                   )}
                 </div>
                 <div className="show-name">{show.name}</div>
-                <div className="show-meta">{show.count} {show.count !== 1 ? 'episodes' : 'episode'}</div>
+                <div className="show-meta">{show.youtube ? '▶ YouTube' : `${show.count} ${show.count !== 1 ? 'episodes' : 'episode'}`}</div>
                 {show.tags?.length > 0 && (
                   <div className="show-tags">
                     {show.tags.slice(0, 3).map(tag => (

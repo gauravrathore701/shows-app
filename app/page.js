@@ -59,6 +59,7 @@ function loadShows() {
         let addedDate = '';
         let greekOrder = null;
         let greekNote = '';
+        let youtube = null;
         try {
           const meta = fs.readFileSync(path.join(showPath, 'metadata.txt'), 'utf8');
           const typeMatch = meta.match(/^type=(.+)/m);
@@ -76,9 +77,12 @@ function loadShows() {
           const gnMatch = meta.match(/^greekNote=(.+)/m);
           if (goMatch) greekOrder = parseInt(goMatch[1], 10);
           if (gnMatch) greekNote = gnMatch[1].trim();
+          // No file on disk — plays as a YouTube embed (/yt/<name>)
+          const ytMatch = meta.match(/^youtube=([A-Za-z0-9_-]{11})\s*$/m);
+          if (ytMatch) youtube = ytMatch[1];
         } catch {}
 
-        return { name: d.name, count: episodeCount, type, heroImage, suggestionPoint, tags, addedDate, videoFile, greekOrder, greekNote };
+        return { name: d.name, count: episodeCount, type, heroImage, suggestionPoint, tags, addedDate, videoFile, greekOrder, greekNote, youtube };
       })
       // Pinned shows first (suggestionPoint), then newest upload, then alphabetical
       .sort((a, b) =>
