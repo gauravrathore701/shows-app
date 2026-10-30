@@ -41,3 +41,10 @@ sudo systemctl daemon-reload; sudo systemctl disable --now hd-idle mnt-hdd.autom
   (pods: headlamp, coredns, traefik, metrics-server, local-path-provisioner).
 - Spindown (A) works: spinup+spindown seen, wake 0.37-2.05 s.
 - Open decision for Gaurav: disable k3s / keep A only (revert fstab + pi_monitor) / custom unmount script.
+
+## 2026-10-29 11:20 — Decision: keep spin-down (A), revert automount (B)
+- Verified: journal shows manual umount 02:49:16, then `Got automount request ... triggered by 3444 (k3s-server)` at 02:49:22; never idled out in 9h after.
+- Mechanism (Robertof gist, node_exporter case): statfs() path walk resets autofs last_used. Fix there = ExtraOptions=strictexpire (systemd>=250, needs hand-written .automount). Not used: once expired, k3s would just remount within a minute → mount/unmount churn.
+- Reverted: /etc/fstab and hdd-remount.service restored from .bak-20261029. POC versions kept as *.poc-20261029.
+- hd-idle (900 s, JMicron by-id) stays on.
+- Checked: /mnt/hdd plain ext4, no autofs layer; /api/wake on :4180 → 204.
