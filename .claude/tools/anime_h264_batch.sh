@@ -43,7 +43,7 @@ pc_up() {  # wake if needed, pick cable or WiFi; returns 1 if unreachable, 2 if 
     timeout 5 bash -c 'echo >/dev/tcp/192.168.1.22/22' 2>/dev/null && { PCHOST=GAURAV@192.168.1.22; return 0; }
     return 2
   fi
-  timeout 120 /home/gaurav/Projects/daily-script/wol_pc.sh >/dev/null 2>&1 < /dev/null
+  timeout 120 /home/gaurav/Projects/daily-script/bash/wol_pc.sh >/dev/null 2>&1 < /dev/null
   for h in 192.168.50.2 192.168.1.22; do
     if ssh -n "${KEY[@]}" GAURAV@$h 'echo ok' 2>/dev/null | grep -q ok; then PCHOST=GAURAV@$h; return 0; fi
   done

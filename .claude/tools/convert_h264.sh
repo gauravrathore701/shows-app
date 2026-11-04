@@ -25,7 +25,7 @@ encode() {  # $1 src  $2 out   (uses per-file $ARGS; with PC set every job runs 
     nice -n 19 ionice -c3 ffmpeg -hide_banner -loglevel error -nostdin -i "$1" $ARGS -y "$2"
     return
   fi
-  /home/gaurav/Projects/daily-script/wol_pc.sh >/dev/null &&
+  /home/gaurav/Projects/daily-script/bash/wol_pc.sh >/dev/null &&
   scp -q "${KEY[@]}" "$1" "$PC:$RD/in.mp4" &&
   ssh "${KEY[@]}" "$PC" "ffmpeg -hide_banner -loglevel error -nostdin -i \"$RD/in.mp4\" $ARGS -y \"$RD/out.mp4\"" &&
   scp -q "${KEY[@]}" "$PC:$RD/out.mp4" "$2"
