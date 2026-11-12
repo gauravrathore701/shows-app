@@ -38,15 +38,9 @@ exec 9>"$TOOLS/.anime_h264.lock"
 flock -n 9 || { log "another instance holds the lock - exiting"; exit 0; }
 
 PCHOST=""
-pc_up() {  # wake if needed, pick cable or WiFi; returns 1 if unreachable, 2 if powered off
-  if [[ $(cat /sys/class/net/eth0/carrier 2>/dev/null) == 0 ]]; then
-    timeout 5 bash -c 'echo >/dev/tcp/192.168.1.22/22' 2>/dev/null && { PCHOST=GAURAV@192.168.1.22; return 0; }
-    return 2
-  fi
+pc_up() {  # wake if needed (best-effort, WiFi); PC over Tailscale since the cable went 2026-11-12; returns 1 if unreachable
   timeout 120 /home/gaurav/Projects/daily-script/bash/wol_pc.sh >/dev/null 2>&1 < /dev/null
-  for h in 192.168.50.2 192.168.1.22; do
-    if ssh -n "${KEY[@]}" GAURAV@$h 'echo ok' 2>/dev/null | grep -q ok; then PCHOST=GAURAV@$h; return 0; fi
-  done
+  ssh -n "${KEY[@]}" GAURAV@100.68.111.11 'echo ok' 2>/dev/null | grep -q ok && { PCHOST=GAURAV@100.68.111.11; return 0; }
   return 1
 }
 
@@ -187,7 +181,6 @@ for pass in 1 2; do
     grep -qxF "$pi" "$DONE" && continue
     pending=1
     pc_up < /dev/null; rc=$?
-    if (( rc == 2 )); then log "STOP PC powered off (eth0 carrier 0, WiFi silent) - WoL cannot help; press the power button and rerun"; exit 0; fi
     if (( rc == 1 )); then
       log "PC unreachable after WoL (${pi##*/})"; streak=$((streak+1))
       (( streak >= 3 )) && { log "STOP PC unreachable 3x in a row"; exit 0; }
