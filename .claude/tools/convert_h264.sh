@@ -51,13 +51,29 @@ for f in "$@"; do
 
   tmp="$(dirname "$f")/.$name.part"
   echo "$(date +%H:%M) start $name ($v)"
-  if ! encode "$f" "$tmp"; then
-    echo "FAIL encode $name"; rm -f "$tmp"
+  # mov_text caps one subtitle event at 64 KB; ASS typesetting drawings can exceed it
+  # (Dororo ep13: 71 KB) → ffmpeg "Result too large". Drop only those events on a
+  # stream-copied temp; the app strips vector drawings anyway, so nothing visible lost.
+  src=$f; clean="$(dirname "$f")/.$name.subfix.mkv"
+  if [[ $ARGS == *mov_text* ]] && (( $(ffprobe -v error -select_streams s -show_entries packet=size -of csv=p=0 "$f" | sort -n | tail -1) > 60000 )); then
+    n=$(ffprobe -v error -select_streams s -show_entries stream=index -of csv=p=0 "$f" | wc -l)
+    in=(); map=()
+    for ((i = 0; i < n; i++)); do
+      ffmpeg -hide_banner -loglevel error -nostdin -i "$f" -map 0:s:$i -c copy -y "$clean.$i.ass" &&
+        awk 'length($0) < 60000' "$clean.$i.ass" > "$clean.$i.small.ass"
+      in+=(-i "$clean.$i.small.ass"); map+=(-map $((i + 1)):0 -map_metadata:s:s:$i 0:s:s:$i)
+    done
+    ffmpeg -hide_banner -loglevel error -nostdin -i "$f" "${in[@]}" -map 0:v -map 0:a? "${map[@]}" -c copy -y "$clean" &&
+      src=$clean && echo "  subs: dropped ASS events >60 KB"
+    for ((i = 0; i < n; i++)); do rm -f "$clean.$i.ass" "$clean.$i.small.ass"; done
+  fi
+  if ! encode "$src" "$tmp"; then
+    echo "FAIL encode $name"; rm -f "$tmp" "$clean"
     # 3 in a row = PC gone/asleep or work dir locked; stop instead of burning the queue
     (( ++fails >= 3 )) && { echo "$(date +%H:%M) STOP 3 encode fails in a row"; break; }
     continue
   fi
-  fails=0
+  fails=0; rm -f "$clean"
 
   # refuse to swap unless the new file is (near) full length
   d0=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f")
@@ -74,7 +90,8 @@ for f in "$@"; do
   fi
 
   dest="$BAK/${f#$ROOT/}"
-  mkdir -p "$(dirname "$dest")" && mv -n "$f" "$dest" && mv "$tmp" "$f" \
+  # chmod: scp from Windows lands as -rw----r-x
+  mkdir -p "$(dirname "$dest")" && mv -n "$f" "$dest" && mv "$tmp" "$f" && chmod 644 "$f" \
     && echo "$(date +%H:%M) done $name — original at $dest" \
     || echo "FAIL swap $name (check $tmp / $dest)"
 done

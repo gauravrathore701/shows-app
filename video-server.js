@@ -1,6 +1,7 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { Transform } from 'stream';
 import { spawn, execFileSync } from 'child_process';
 import { listTracks, getVtt, getTrackInfo, getKeyframeSegments } from './video-tracks.js';
 
@@ -83,7 +84,10 @@ function needsTranscode(filePath) {
 const durationCache = new Map();
 
 function getDuration(filePath) {
-  if (durationCache.has(filePath)) return durationCache.get(filePath);
+  // keyed by mtime like probeCache: a file swapped in place must not keep the old length
+  let key = filePath;
+  try { key += ':' + fs.statSync(filePath).mtimeMs; } catch {}
+  if (durationCache.has(key)) return durationCache.get(key);
   try {
     const d = parseFloat(
       execFileSync('ffprobe', [
@@ -91,7 +95,7 @@ function getDuration(filePath) {
         '-of', 'default=noprint_wrappers=1:nokey=1', filePath,
       ], { timeout: 8000 }).toString().trim()
     ) || 0;
-    durationCache.set(filePath, d);
+    durationCache.set(key, d);
     return d;
   } catch { return 0; }
 }
@@ -547,7 +551,20 @@ const server = http.createServer((req, res) => {
     // first request carries no Range header.
     const stream = fs.createReadStream(filePath);
     stream.on('data', onData);
-    stream.pipe(res);
+    // Pace whole-file sends to 2x the file's average bitrate (first CHUNK free).
+    // 2026-11-15: Chrome abandoned a no-Range request but cloudflared kept pulling it
+    // at ~96 Mbit/s for 3.5 min (2.5 GB), starving the real range requests → buffering.
+    const dur = getDuration(filePath);
+    const bps = dur > 0 ? (fileSize / dur) * 2 : 2 * 1024 * 1024;
+    const t0 = Date.now();
+    const pace = new Transform({
+      transform(c, _enc, cb) {
+        this.push(c);
+        const ahead = (sent - CHUNK) / bps - (Date.now() - t0) / 1000;
+        if (ahead > 0) setTimeout(cb, ahead * 1000); else cb();
+      },
+    });
+    stream.pipe(pace).pipe(res);
     stream.on('error', () => res.destroy());
     res.on('close', () => stream.destroy());
   }
