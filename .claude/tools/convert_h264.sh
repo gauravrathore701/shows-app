@@ -35,17 +35,25 @@ fails=0
 for f in "$@"; do
   name=$(basename "$f")
   v=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt -of csv=p=0 "$f")
-  a=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of csv=p=0 "$f")
+  # every audio track, not just a:0 (Ben Gen 10: a:0 aac but eng = ac3 → silent when picked)
+  a=$(ffprobe -v error -select_streams a -show_entries stream=codec_name -of csv=p=0 "$f" | sort -u | tr '\n' ' '); a=${a% }
   s=$(ffprobe -v error -select_streams s -show_entries stream=codec_name -of csv=p=0 "$f" | sort -u | tr '\n' ' ')
   vok=0; [[ $v == h264,yuv420p || $v == hevc,yuv420p || $v == av1,* ]] && vok=1
-  aok=0; [[ -z $a || $a == aac || $a == mp3 || $a == opus ]] && aok=1
+  aok=0; [[ -z $(tr ' ' '\n' <<<"$a" | grep -vxE '(aac|mp3|opus)?') ]] && aok=1
   if (( vok && aok )); then echo "skip (already direct-play) $name"; continue; fi
   # originals are kept, so every file needs room for its copy; stop the queue before the HDD fills
   free=$(df --output=avail -B1 "$ROOT" | tail -1); need=$(( $(stat -c %s "$f") * 3 / 2 + 20 * 1024**3 ))
   if (( free < need )); then echo "$(date +%H:%M) STOP low disk ($((free / 1024**3))G free) at $name"; break; fi
   ARGS="-map 0:v:0 -map 0:a? $( ((vok)) && echo '-c:v copy' || echo "$VENC")$([[ $v == hevc,* ]] && ((vok)) && echo ' -tag:v hvc1') $( ((aok)) && echo '-c:a copy' || echo "$AENC")"
-  # MP4 holds text subs only as mov_text; image subs (PGS/VobSub) can't go in → dropped
-  [[ -n $s && -z $(tr ' ' '\n' <<<"$s" | grep -vxE 'subrip|ass|ssa|mov_text|webvtt|text|') ]] && ARGS+=' -map 0:s -c:s mov_text'
+  # MP4 holds text subs only as mov_text; image subs (PGS/VobSub) can't go in → dropped.
+  # Per stream (2026-11-17): Bebop 01/17/24 = 3 ASS + 1 PGS; all-or-nothing dropped the ASS too.
+  tsub=(); tabs=(); i=0   # tsub = s:N index, tabs = absolute stream index (for packet filter)
+  while IFS=, read -r idx codec; do
+    [[ $codec =~ ^(subrip|ass|ssa|mov_text|webvtt|text)$ ]] && { tsub+=($i); tabs+=($idx); }
+    ((i++))
+  done < <(ffprobe -v error -select_streams s -show_entries stream=index,codec_name -of csv=p=0 "$f")
+  smap=''; for i in "${tsub[@]}"; do smap+=" -map 0:s:$i"; done
+  (( ${#tsub[@]} )) && ARGS+="$smap -c:s mov_text"
   ARGS+=' -movflags +faststart -f mp4'
   v="$v a=${a:-none} s=${s:-none}"
 
@@ -55,17 +63,22 @@ for f in "$@"; do
   # (Dororo ep13: 71 KB) → ffmpeg "Result too large". Drop only those events on a
   # stream-copied temp; the app strips vector drawings anyway, so nothing visible lost.
   src=$f; clean="$(dirname "$f")/.$name.subfix.mkv"
-  if [[ $ARGS == *mov_text* ]] && (( $(ffprobe -v error -select_streams s -show_entries packet=size -of csv=p=0 "$f" | sort -n | tail -1) > 60000 )); then
-    n=$(ffprobe -v error -select_streams s -show_entries stream=index -of csv=p=0 "$f" | wc -l)
+  # size check on text sub packets only (PGS packets are big but never reach mov_text)
+  if [[ $ARGS == *mov_text* ]] && (( $(ffprobe -v error -select_streams s -show_entries packet=stream_index,size -of csv=p=0 "$f" |
+       awk -F, -v ok=" ${tabs[*]} " 'index(ok, " " $1 " ") {print $2}' | sort -n | tail -1) > 60000 )); then
+    n=${#tsub[@]}
     in=(); map=()
-    for ((i = 0; i < n; i++)); do
-      ffmpeg -hide_banner -loglevel error -nostdin -i "$f" -map 0:s:$i -c copy -y "$clean.$i.ass" &&
-        awk 'length($0) < 60000' "$clean.$i.ass" > "$clean.$i.small.ass"
-      in+=(-i "$clean.$i.small.ass"); map+=(-map $((i + 1)):0 -map_metadata:s:s:$i 0:s:s:$i)
+    for ((k = 0; k < n; k++)); do
+      i=${tsub[k]}
+      ffmpeg -hide_banner -loglevel error -nostdin -i "$f" -map 0:s:$i -c copy -y "$clean.$k.ass" &&
+        awk 'length($0) < 60000' "$clean.$k.ass" > "$clean.$k.small.ass"
+      in+=(-i "$clean.$k.small.ass"); map+=(-map $((k + 1)):0 -map_metadata:s:s:$k 0:s:s:$i)
     done
+    # temp holds only the text subs, renumbered s:0..n-1 → remap
     ffmpeg -hide_banner -loglevel error -nostdin -i "$f" "${in[@]}" -map 0:v -map 0:a? "${map[@]}" -c copy -y "$clean" &&
-      src=$clean && echo "  subs: dropped ASS events >60 KB"
-    for ((i = 0; i < n; i++)); do rm -f "$clean.$i.ass" "$clean.$i.small.ass"; done
+      src=$clean && ARGS=${ARGS/"$smap"/$(for ((k = 0; k < n; k++)); do printf ' -map 0:s:%d' $k; done)} &&
+      echo "  subs: dropped ASS events >60 KB"
+    for ((k = 0; k < n; k++)); do rm -f "$clean.$k.ass" "$clean.$k.small.ass"; done
   fi
   if ! encode "$src" "$tmp"; then
     echo "FAIL encode $name"; rm -f "$tmp" "$clean"
