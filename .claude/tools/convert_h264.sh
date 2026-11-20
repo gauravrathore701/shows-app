@@ -89,7 +89,8 @@ for f in "$@"; do
   fails=0; rm -f "$clean"
 
   # refuse to swap unless the new file is (near) full length
-  d0=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f")
+  # source length = video end, not container: AT S05E03 mkv says 702 s from a trailing PGS sub, v+a end 693.5
+  d0=$(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time -of csv=p=0 "$f" | sort -n | tail -1)
   d1=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$tmp")
   if ! awk -v a="$d0" -v b="$d1" 'BEGIN{exit !(b>0 && (a-b)<2 && (b-a)<2)}'; then
     echo "FAIL duration $name ($d0 vs $d1)"; rm -f "$tmp"; continue
