@@ -91,15 +91,21 @@ for f in "$@"; do
   # refuse to swap unless the new file is (near) full length
   # source length = video end, not container: AT S05E03 mkv says 702 s from a trailing PGS sub, v+a end 693.5
   d0=$(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time -of csv=p=0 "$f" | sort -n | tail -1)
-  d1=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$tmp")
+  # new file = video end too: Oppenheimer 2026-11-20 video stopped at 4202 s, audio ran 10822 → container said full length
+  d1=$(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time -of csv=p=0 "$tmp" | sort -n | tail -1)
   if ! awk -v a="$d0" -v b="$d1" 'BEGIN{exit !(b>0 && (a-b)<2 && (b-a)<2)}'; then
     echo "FAIL duration $name ($d0 vs $d1)"; rm -f "$tmp"; continue
   fi
   # container length alone missed GWH 2026-10-20: video 2h06m, audio cut at 1h18m → check the audio track too
   if [[ -n $a ]]; then
-    a1=$(ffprobe -v error -select_streams a:0 -show_entries packet=pts_time -of csv=p=0 "$tmp" | tail -1)
-    if ! awk -v a="$d0" -v b="$a1" 'BEGIN{exit !(b>0 && (a-b)<5)}'; then
-      echo "FAIL audio $name (audio ends ${a1}s of ${d0}s)"; rm -f "$tmp"; continue
+    # every track, not a:0: Puss in Boots 2026-11-20 a:1 (eng) stopped at 2853 of 6141 s on the Nitro
+    abad=''
+    for ((k = 0; k < $(wc -w <<<"$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$tmp")"); k++)); do
+      a1=$(ffprobe -v error -select_streams a:$k -show_entries packet=pts_time -of csv=p=0 "$tmp" | sort -n | tail -1)
+      awk -v a="$d0" -v b="$a1" 'BEGIN{exit !(b>0 && (a-b)<5)}' || abad+=" a:$k=${a1}s"
+    done
+    if [[ -n $abad ]]; then
+      echo "FAIL audio $name (of ${d0}s:$abad)"; rm -f "$tmp"; continue
     fi
   fi
 
